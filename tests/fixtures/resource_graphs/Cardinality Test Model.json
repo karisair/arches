@@ -44,6 +44,7 @@
             ],
             "reports": [],
             "iconclass": "",
+            "is_active": true,
             "functions": [],
             "nodegroups": [
                 {
@@ -201,7 +202,7 @@
                     "nodegroup_id": "70eb4e3a-adbc-11e6-aee7-14109fd34195",
                     "config": null,
                     "parentproperty": null,
-                    "name": "Outer Node"
+                    "name": "Outer Node II"
                 },
                 {
                     "graph_id": "2f7f8e40-adbc-11e6-ac7f-14109fd34195",
@@ -237,7 +238,7 @@
                     "nodegroup_id": "6d7baf1c-adbc-11e6-9ee6-14109fd34195",
                     "config": null,
                     "parentproperty": null,
-                    "name": "String Input"
+                    "name": "String Input II"
                 },
                 {
                     "graph_id": "2f7f8e40-adbc-11e6-ac7f-14109fd34195",
@@ -285,7 +286,7 @@
                     "nodegroup_id": "7204869c-adbc-11e6-8bec-14109fd34195",
                     "config": null,
                     "parentproperty": null,
-                    "name": "Outer Node"
+                    "name": "Outer Node III"
                 },
                 {
                     "graph_id": "2f7f8e40-adbc-11e6-ac7f-14109fd34195",
@@ -297,10 +298,17 @@
                     "nodegroup_id": "6e59e71c-adbc-11e6-ad8e-14109fd34195",
                     "config": null,
                     "parentproperty": null,
-                    "name": "Outer Node"
+                    "name": "Outer Node IV"
                 }
             ],
             "ontology_id": null,
+            "publication": {
+                "graph_id": "2f7f8e40-adbc-11e6-ac7f-14109fd34195",
+                "notes": "Initial migration.",
+                "publicationid": "c7b7e1cb-3aa6-465d-9a37-9bd087d3849b",
+                "published_time": "2022-03-22T13:29:06.593",
+                "user_id": null
+            },
             "description": "Model to test the 6 different combinations of card container and child card cardinality",
             "edges": [
                 {
@@ -552,8 +560,8 @@
                 "config": null,
                 "name": "Top Node"
             },
-            "isactive": true,
-            "deploymentdate": null
+            "deploymentdate": null,
+            "slug": "cardinality_test_model"
         }
     ],
     "metadata": {

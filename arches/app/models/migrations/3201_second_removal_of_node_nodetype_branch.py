@@ -17,8 +17,13 @@ def forwards_func(apps, schema_editor):
 
     try:
         GraphModel.objects.get(graphid="22000000-0000-0000-0000-000000000001").delete()
-        NodeGroup.objects.get(nodegroupid="20000000-0000-0000-0000-100000000001").delete()
-    except (GraphModel.DoesNotExist, NodeGroup.DoesNotExist):
+    except GraphModel.DoesNotExist:
+        pass
+    try:
+        NodeGroup.objects.get(
+            nodegroupid="20000000-0000-0000-0000-100000000001"
+        ).delete()
+    except NodeGroup.DoesNotExist:
         pass
 
 

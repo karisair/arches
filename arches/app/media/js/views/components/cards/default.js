@@ -1,11 +1,8 @@
-define([
-    'knockout',
-    'viewmodels/card-component'
-], function(ko, CardComponentViewModel) {
-    return ko.components.register('default-card', {
-        viewModel: CardComponentViewModel,
-        template: {
-            require: 'text!templates/views/components/cards/default.htm'
-        }
-    });
+import ko from 'knockout';
+import CardComponentViewModel from 'viewmodels/card-component';
+import defaultCardTemplate from 'templates/views/components/cards/default.htm';
+
+export default ko.components.register('default-card', {
+    viewModel: CardComponentViewModel,
+    template: defaultCardTemplate,
 });

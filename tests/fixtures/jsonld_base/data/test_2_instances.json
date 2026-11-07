@@ -10,7 +10,13 @@
                 "tiles": [
                     {
                         "data": {
-                            "98730ce4-fa6d-11e9-b369-3af9d3b32b71": "24d0d25a-fa75-11e9-b369-3af9d3b32b71"
+                            "98730ce4-fa6d-11e9-b369-3af9d3b32b71": [
+                                {
+                                    "resourceId": "24d0d25a-fa75-11e9-b369-3af9d3b32b71",
+                                    "ontologyProperty": "",
+                                    "inverseOntologyProperty": ""
+                                }
+                            ]
                         },
                         "nodegroup_id": "98730ce4-fa6d-11e9-b369-3af9d3b32b71",
                         "parenttile_id": null,
@@ -21,7 +27,7 @@
                     },
                     {
                         "data": {
-                            "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71": "Res Inst "
+                            "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71":  {"en": {"value": "Res Inst "}}
                         },
                         "nodegroup_id": "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71",
                         "parenttile_id": null,
@@ -41,7 +47,7 @@
                 "tiles": [
                     {
                         "data": {
-                            "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71": "res inst list"
+                            "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71":  {"en": {"value": "res inst list"}}
                         },
                         "nodegroup_id": "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71",
                         "parenttile_id": null,
@@ -53,8 +59,16 @@
                     {
                         "data": {
                             "ae93f844-fa6d-11e9-b369-3af9d3b32b71": [
-                                "24d0d25a-fa75-11e9-b369-3af9d3b32b71",
-                                "12bbf5bc-fa85-11e9-91b8-3af9d3b32b71"
+                                {
+                                    "resourceId": "24d0d25a-fa75-11e9-b369-3af9d3b32b71",
+                                    "ontologyProperty": "",
+                                    "inverseOntologyProperty": ""
+                                },
+                                {
+                                    "resourceId": "12bbf5bc-fa85-11e9-91b8-3af9d3b32b71",
+                                    "ontologyProperty": "",
+                                    "inverseOntologyProperty": ""
+                                }
                             ]
                         },
                         "nodegroup_id": "ae93f844-fa6d-11e9-b369-3af9d3b32b71",
@@ -75,7 +89,7 @@
                 "tiles": [
                     {
                         "data": {
-                            "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71": "Test Data"
+                            "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71":  {"en": {"value": "Test Data"}}
                         },
                         "nodegroup_id": "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71",
                         "parenttile_id": null,
@@ -155,7 +169,7 @@
                 "tiles": [
                     {
                         "data": {
-                            "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71": "res inst plus concept"
+                            "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71":  {"en": {"value": "res inst plus concept"}}
                         },
                         "nodegroup_id": "fa3b2ec6-fa6c-11e9-b369-3af9d3b32b71",
                         "parenttile_id": null,
@@ -166,7 +180,13 @@
                     },
                     {
                         "data": {
-                            "08064f26-fa6e-11e9-b369-3af9d3b32b71": "24d0d25a-fa75-11e9-b369-3af9d3b32b71",
+                            "08064f26-fa6e-11e9-b369-3af9d3b32b71": [
+                                {
+                                    "resourceId": "24d0d25a-fa75-11e9-b369-3af9d3b32b71",
+                                    "ontologyProperty": "",
+                                    "inverseOntologyProperty": ""
+                                }
+                            ],
                             "1b4ab982-fa6e-11e9-b369-3af9d3b32b71": "946e7b38-889a-4826-94a8-ae1dd1c8c2d0"
                         },
                         "nodegroup_id": "08064f26-fa6e-11e9-b369-3af9d3b32b71",

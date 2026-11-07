@@ -26,10 +26,6 @@ MODE = get_env_variable("DJANGO_MODE")
 
 DEBUG = ast.literal_eval(get_env_variable("DJANGO_DEBUG"))
 
-COUCHDB_URL = "http://{}:{}@{}:{}".format(
-    get_env_variable("COUCHDB_USER"), get_env_variable("COUCHDB_PASS"), get_env_variable("COUCHDB_HOST"), get_env_variable("COUCHDB_PORT")
-)  # defaults to localhost:5984
-
 DATABASES = {
     "default": {
         "ENGINE": "django.contrib.gis.db.backends.postgis",
@@ -39,11 +35,16 @@ DATABASES = {
         "HOST": get_env_variable("PGHOST"),
         "PORT": get_env_variable("PGPORT"),
         "POSTGIS_TEMPLATE": "template_postgis",
+        "OPTIONS": {
+            "options": "-c cursor_tuple_fraction=1",
+        },
     }
 }
 
 ELASTICSEARCH_HTTP_PORT = get_env_variable("ESPORT")
-ELASTICSEARCH_HOSTS = [{"host": get_env_variable("ESHOST"), "port": ELASTICSEARCH_HTTP_PORT}]
+ELASTICSEARCH_HOSTS = [
+    {"host": get_env_variable("ESHOST"), "port": ELASTICSEARCH_HTTP_PORT}
+]
 
 USER_ELASTICSEARCH_PREFIX = get_optional_env_variable("ELASTICSEARCH_PREFIX")
 if USER_ELASTICSEARCH_PREFIX:

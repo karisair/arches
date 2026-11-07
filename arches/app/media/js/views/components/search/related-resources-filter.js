@@ -1,30 +1,42 @@
-define(['knockout',
-    'views/resource/related-resources-manager',
-    'views/components/search/base-filter'
-], function(ko, RelatedResourcesManager, BaseFilter) {
-    var componentName = 'related-resources-filter';
-    return ko.components.register(componentName, {
-        viewModel: BaseFilter.extend ({
-            initialize: function(options) {
-                options.name = 'Related Resources Filter';
-                BaseFilter.prototype.initialize.call(this, options);
-                this.ready = ko.observable(false);
-                this.options = options;
-                // this component is just a light weight wrapper around the relatd resources manager
-                // need to wait for the search-resutls filter to be ready
-                // before we can load the realated-resources-filter
-                // because we need to pass the entire rsearch results filter into the 
-                // related resources filter
-                var loaded = ko.computed(function(){
-                    return this.getFilter('search-results');
-                }, this);
-                loaded.subscribe(function(loaded) {
-                    options.searchResultsVm = this.getFilter('search-results');
-                    options.filters[componentName](this);
-                    this.ready(true);
-                }, this);
-            }
-        }),
-        template: { require: 'text!templates/views/components/search/related-resources-filter.htm'}
-    });
+import ko from 'knockout';
+import arches from 'arches';
+import RelatedResourcesManager from 'views/resource/related-resources-manager';
+import BaseFilter from 'views/components/search/base-filter';
+import relatedResourcesFilterTemplate from 'templates/views/components/search/related-resources-filter.htm';
+import 'views/components/related-resources-graph';   
+
+
+var componentName = 'related-resources-filter';
+const viewModel = BaseFilter.extend ({
+    initialize: function(options) {
+        options.name = 'Related Resources Filter';
+        BaseFilter.prototype.initialize.call(this, options);
+        this.ready = ko.observable(false);
+        this.options = options;
+        this.urls = arches.urls;
+        var self = this;
+        var setSearchResults = function(){
+            self.searchResultsVm.relatedResourcesManager = self;
+            self.ready(true);
+        };
+        this.searchFilterVms[componentName](this);
+
+        this.searchResultsVm = self.getFilterByType('search-results-type', false);
+        if (ko.unwrap(this.searchResultsVm)) {
+            this.searchResultsVm = this.searchResultsVm();
+            setSearchResults();
+        } else {
+            this.searchResultsVm.subscribe(searchResultsFilter => {
+                if (searchResultsFilter) {
+                    this.searchResultsVm = searchResultsFilter;
+                    setSearchResults();
+                }
+            }, this);
+        }
+    }
+});
+
+export default ko.components.register(componentName, {
+    viewModel: viewModel,
+    template: relatedResourcesFilterTemplate,
 });

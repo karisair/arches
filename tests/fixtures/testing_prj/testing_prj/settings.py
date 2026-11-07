@@ -25,7 +25,7 @@ TEMPLATES[0]["DIRS"].insert(0, os.path.join(APP_ROOT, "templates"))
 LOCALE_PATHS.append(os.path.join(APP_ROOT, "locale"))
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "x5=ea3t2-f392y$c2&7rxfypg3+m3p^-e#9zw8h^e7b%p9q2p$"
+SECRET_KEY = "django-insecure-x5=ea3t2-f392y$c2&7rxfypg3+m3p^-e#9zw8h^e7b%p9q2p$"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -38,7 +38,8 @@ ELASTICSEARCH_PREFIX = "testing_prj"
 ELASTICSEARCH_CUSTOM_INDEXES = []
 # [{
 #     'module': 'testing_prj.search_indexes.sample_index.SampleIndex',
-#     'name': 'my_new_custom_index' <-- follow ES index naming rules
+#     'name': 'my_new_custom_index', <-- follow ES index naming rules
+#     'should_update_asynchronously': False  <-- denotes if asynchronously updating the index would affect custom functionality within the project.
 # }]
 
 LOAD_DEFAULT_ONTOLOGY = False
@@ -52,7 +53,9 @@ DATABASES = {
         "ENGINE": "django.contrib.gis.db.backends.postgis",
         "HOST": "localhost",
         "NAME": "testing_prj",
-        "OPTIONS": {},
+        "OPTIONS": {
+            "options": "-c cursor_tuple_fraction=1",
+        },
         "PASSWORD": "postgis",
         "PORT": "5432",
         "POSTGIS_TEMPLATE": "template_postgis",
@@ -74,7 +77,7 @@ INSTALLED_APPS = (
     "arches.app.models",
     "arches.management",
     "guardian",
-    "captcha",
+    "django_recaptcha",
     "revproxy",
     "corsheaders",
     "oauth2_provider",
@@ -84,7 +87,9 @@ INSTALLED_APPS = (
 
 ALLOWED_HOSTS = []
 
-SYSTEM_SETTINGS_LOCAL_PATH = os.path.join(APP_ROOT, "system_settings", "System_Settings.json")
+SYSTEM_SETTINGS_LOCAL_PATH = os.path.join(
+    APP_ROOT, "system_settings", "System_Settings.json"
+)
 WSGI_APPLICATION = "testing_prj.wsgi.application"
 STATIC_ROOT = "/var/www/media"
 
@@ -93,7 +98,9 @@ RESOURCE_IMPORT_LOG = os.path.join(APP_ROOT, "logs", "resource_import.log")
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {"console": {"format": "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"}}
+    "formatters": {
+        "console": {"format": "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"}
+    },
     "handlers": {
         "file": {
             "level": "WARNING",  # DEBUG, INFO, WARNING, ERROR
@@ -101,9 +108,19 @@ LOGGING = {
             "filename": os.path.join(APP_ROOT, "arches.log"),
             "formatter": "console",
         },
-        "console": {"level": "WARNING", "class": "logging.StreamHandler", "formatter": "console"},
+        "console": {
+            "level": "WARNING",
+            "class": "logging.StreamHandler",
+            "formatter": "console",
+        },
     },
-    "loggers": {"arches": {"handlers": ["file", "console"], "level": "WARNING", "propagate": True}},
+    "loggers": {
+        "arches": {
+            "handlers": ["file", "console"],
+            "level": "WARNING",
+            "propagate": True,
+        }
+    },
 }
 
 # Absolute filesystem path to the directory that will hold user-uploaded files.
@@ -123,14 +140,16 @@ CACHES = {
     #         'MAX_ENTRIES': 1000
     #     }
     # }
-    "default": {"BACKEND": "django.core.cache.backends.memcached.MemcachedCache", "LOCATION": "127.0.0.1:11211"}
+    "default": {
+        "BACKEND": "django.core.cache.backends.memcached.MemcachedCache",
+        "LOCATION": "127.0.0.1:11211",
+    }
 }
 
 # Identify the usernames and duration (seconds) for which you want to cache the time wheel
 CACHE_BY_USER = {"anonymous": 3600 * 24}
 
-MOBILE_OAUTH_CLIENT_ID = ""  # '9JCibwrWQ4hwuGn5fu2u1oRZSs9V6gK8Vu8hpRC4'
-MOBILE_DEFAULT_ONLINE_BASEMAP = {"default": "mapbox://styles/mapbox/streets-v9"}
+OAUTH_CLIENT_ID = ""  # '9JCibwrWQ4hwuGn5fu2u1oRZSs9V6gK8Vu8hpRC4'
 
 APP_TITLE = "Arches | Heritage Data Management"
 COPYRIGHT_TEXT = "All Rights Reserved."
@@ -143,7 +162,7 @@ ENABLE_CAPTCHA = False
 NOCAPTCHA = True
 # RECAPTCHA_PROXY = 'http://127.0.0.1:8000'
 if DEBUG is True:
-    SILENCED_SYSTEM_CHECKS = ["captcha.recaptcha_test_key_error"]
+    SILENCED_SYSTEM_CHECKS += ["django_recaptcha.recaptcha_test_key_error"]
 
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 # EMAIL_USE_TLS = True
@@ -152,9 +171,11 @@ if DEBUG is True:
 # EMAIL_HOST_PASSWORD = 'xxxxxxx'
 # EMAIL_PORT = 587
 
-CELERY_BROKER_URL = "amqp://guest:guest@localhost"
+CELERY_BROKER_URL = ""  # RabbitMQ --> "amqp://guest:guest@localhost",  Redis --> "redis://localhost:6379/0"
 CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_RESULT_BACKEND = "django-db"  # Use 'django-cache' if you want to use your cache as your backend
+CELERY_RESULT_BACKEND = (
+    "django-db"  # Use 'django-cache' if you want to use your cache as your backend
+)
 CELERY_TASK_SERIALIZER = "json"
 
 
@@ -162,8 +183,15 @@ CELERY_SEARCH_EXPORT_EXPIRES = 24 * 3600  # seconds
 CELERY_SEARCH_EXPORT_CHECK = 3600  # seconds
 
 CELERY_BEAT_SCHEDULE = {
-    "delete-expired-search-export": {"task": "arches.app.tasks.delete_file", "schedule": CELERY_SEARCH_EXPORT_CHECK},
-    "notification": {"task": "arches.app.tasks.message", "schedule": CELERY_SEARCH_EXPORT_CHECK, "args": ("Celery Beat is Running")}
+    "delete-expired-search-export": {
+        "task": "arches.app.tasks.delete_file",
+        "schedule": CELERY_SEARCH_EXPORT_CHECK,
+    },
+    "notification": {
+        "task": "arches.app.tasks.message",
+        "schedule": CELERY_SEARCH_EXPORT_CHECK,
+        "args": ("Celery Beat is Running"),
+    },
 }
 
 try:

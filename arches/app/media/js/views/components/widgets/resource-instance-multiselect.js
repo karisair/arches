@@ -1,15 +1,16 @@
-define([
-    'knockout',
-    'viewmodels/resource-instance-select',
-    'bindings/select2-query'
-], function(ko, ResourceInstanceSelectViewModel) {
-    return ko.components.register('resource-instance-multiselect-widget', {
-        viewModel: function(params) {
-            params.multiple = true;
-            ResourceInstanceSelectViewModel.apply(this, [params]);
-        },
-        template: {
-            require: 'text!widget-templates/resource-instance-select'
-        }
-    });
+import ko from 'knockout';
+import ResourceInstanceSelectViewModel from 'viewmodels/resource-instance-select';
+import resourceInstanceSelectWidgetTemplate from 'templates/views/components/widgets/resource-instance-select.htm';
+import 'bindings/select2-query';
+
+
+const viewModel =  function(params) {
+    params.multiple = true;
+    params.datatype = 'resource-instance-list';
+    ResourceInstanceSelectViewModel.apply(this, [params]);
+};
+
+export default ko.components.register('resource-instance-multiselect-widget', {
+    viewModel: viewModel,
+    template: resourceInstanceSelectWidgetTemplate,
 });

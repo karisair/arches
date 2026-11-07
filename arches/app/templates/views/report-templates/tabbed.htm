@@ -5,22 +5,23 @@
 {% block header %}
 <!-- ko if: tabs()[activeTabIndex()]  -->
 <div>
-    <ul class="tabbed-report-tab-list">
-    <!-- ko foreach: {data: tabs, as: 'tab'}  -->
-    <li data-bind="click: function(){ $parent.setActiveTab($index()) }, css: { 'active': ko.unwrap($parent.activeTabIndex) === $index() }" class="report-tab">
-        <a><span><i data-bind="attr: {class: ('fa '+ ko.unwrap(tab.icon))}"></i></span></a>
-    </li>
-    <!-- /ko -->
+    <div class="tabbed-report-tab-list" role="tablist">
+        <!-- ko foreach: {data: tabs, as: 'tab'}  -->
+        <div tabindex="0" aria-controls="report-tabpanel" data-bind="onEnterkeyClick, onSpaceClick, click: function(){ $parent.setActiveTab($index()); }, css: { 'active': ko.unwrap($parent.activeTabIndex) === $index() }, attr: { 'aria-selected': ko.unwrap($parent.activeTabIndex) === $index() ? 'true' : 'false', 'aria-controls': $parent.tabpanelId, 'aria-label': ko.unwrap(tab.name), 'data-tooltip': ko.unwrap(tab.name) }" class="report-tab" role="tab">
+            <span aria-hidden="true"><i data-bind="attr: {class: ('fa '+ ko.unwrap(tab.icon))}"></i></span>
+        </div>
+        <!-- /ko -->
+    </div>
 </ul>
 </div>
 <div class="tab-banner">
     <div style="display: flex; flex-direction: row">
         <span><i data-bind="class: report.get('iconclass') || 'fa fa-file-o'"></i></span>
         <!--ko if: report.get('displayname')-->
-        <span style="padding-left: 5px" data-bind="text: report.get('displayname') || '(Resource Instance Name)'"></span>
+        <span style="padding: 0 5px;" data-bind="text: report.get('displayname') || '(' + $root.translations.resourceInstanceName + ')'"></span>
         <!--/ko-->
         <!--ko ifnot: report.get('displayname')-->
-        <span style="padding-left: 5px">{% trans "(Resource Instance Name)" %}</span>
+        <span data-bind="text: '(' + $root.translations.resourceInstanceName + ')'" style="padding: 0 5px"></span>
         <!--/ko-->
     </div>
     <div><span data-bind="text: tabs()[activeTabIndex()].name"></span></div>
@@ -38,7 +39,7 @@
 {% block header_form %}
 <div style="display: flex; flex-direction: row">
 <div id="card-save-tile-btn" class="install-buttons">
-    <button id="" class="btn btn-shim btn-mint btn-labeled btn-md fa fa-plus" data-bind="click: addTab">{% trans "Add Tab" %}</button>
+    <button class="btn btn-shim btn-mint btn-labeled btn-md fa fa-plus" data-bind="click: addTab"><span data-bind="text: $root.translations.addTab" ></span></button>
 </div>
 </div>
 <div data-bind="sortable: {
@@ -54,28 +55,36 @@
         </div>
         <div>
             <div class="col-xs-12 pad-nor" style="padding: 5px">
-                <input type="" placeholder="{% trans "Tab Name" %}" id="" class="form-control input-md widget-input" data-bind="textInput: tab.name" />
+                <input type="" data-bind="attr: {placeholder: $root.translations.tabName}, textInput: tab.name" class="form-control input-md widget-input" />
             </div>
             <div class="col-xs-12 pad-nor" style="padding: 5px">
                 <!--ko if: $parent.icons().length > 0 -->
-                <select class="design" data-placeholder="{% trans "Select tab icon" %}" data-bind="value: tab.icon, options: $parent.icons(), optionsText: 'name', optionsValue: 'cssclass', chosen: {disable_search_threshold: 10, width: '100%'}"></select>
-                <!-- <div class="design">
-                    <input class=""
-                    data-bind="select2Query: {
-                        select2Config: {
-                            clickBubble: true,
-                            disabled: false,
-                            data: {results: $parent.icons()},
-                            value: tab.icon,
-                            multiple: false,
-                            placeholder: 'Select tab icon',
-                            allowClear: true
-                        }}">
-                    </div> -->
+                <select 
+                    class="design" 
+                    data-bind="
+                        placeholder: $root.translations.selectTabIcon,
+                        value: tab.icon, 
+                        options: $parent.icons(), 
+                        optionsText: 'name', 
+                        optionsValue: 'cssclass', 
+                        chosen: {disable_search_threshold: 10, width: '100%'}
+                    "
+                    ></select>
                 <!--/ko-->
             </div>
             <div class="col-xs-12 pad-nor" style="padding: 5px">
-                <select class="design" data-placeholder="{% trans "Select cards in this tab" %}" multiple data-bind="selectedOptions: tab.nodegroup_ids, options: $parent.topcards, optionsText: 'name', optionsValue: 'nodegroupid', chosen: {disable_search_threshold: 10, width: '100%'}"></select>
+                <select 
+                    class="design" 
+                    multiple 
+                    data-bind="
+                        placeholder: $root.translations.selectCardsInTab,
+                        selectedOptions: tab.nodegroup_ids, 
+                        options: $parent.topcards, 
+                        optionsText: 'name', 
+                        optionsValue: 'nodegroupid', 
+                        chosen: {disable_search_threshold: 10, width: '100%'}
+                    "
+                ></select>
             </div>
         </div>
     </div>
@@ -87,13 +96,13 @@
 {% block body %}
 
     <!--ko if: hasProvisionalData() && (editorContext === false) -->
-    <div class="report-provisional-flag">{% trans 'This resource has provisional edits (not displayed in this report) that are pending review' %}</div>
+    <div class="report-provisional-flag"><span data-bind="text: $root.translations.pendingProvisionalEditsNotDisplayed"></span></div>
     <!--/ko-->
     <!--ko if: hasProvisionalData() && (editorContext === true && report.userisreviewer === true) -->
-    <div class="report-provisional-flag">{% trans 'This resource has provisional edits (not displayed in this report) that are pending review' %}</div>
+    <div class="report-provisional-flag"><span data-bind="text: $root.translations.pendingProvisionalEditsNotDisplayed"></span></div>
     <!--/ko-->
     <!--ko if: hasProvisionalData() && (editorContext === true && report.userisreviewer === false) -->
-    <div class="report-provisional-flag">{% trans 'This resource has provisional edits that are pending review' %}</div>
+    <div class="report-provisional-flag"><span data-bind="text: $root.translations.pendingProvisionalEdits"></div>
     <!--/ko-->
 
 
@@ -104,7 +113,7 @@
     }"></div>
     <!--/ko-->
     <!-- ko if: !tabs()[activeTabIndex()].empty_component || !activeTabEmpty()  -->
-    <div class="rp-report-section relative rp-report-section-root">
+    <div class="rp-report-section relative rp-report-section-root" role="tabpanel" data-bind="attr: {id: tabpanelId, 'aria-label': tabs()[activeTabIndex()].name}">
         <!-- ko if: tabs()[activeTabIndex()].side_component  -->
         <div class="tabbed-report-sidepanel-wrapper">
             <div class="tabbed-report-sidepanel" data-bind="component: {
@@ -124,6 +133,7 @@
             <!-- /ko -->
             <!-- ko ifnot: tabs()[activeTabIndex()].main_component  -->
             <!-- ko foreach: { data: activeCards(), as: 'card' } -->
+            <!-- ko if: $parent.hideEmptyNodes() === false || card.tiles().length > 0 -->
                 <!-- ko if: $index() !== 0 --><hr class="rp-tile-separator"><!-- /ko -->
                 <div class="rp-card-section">
                     <!--ko if: card && card.alternateReportComponent -->
@@ -134,16 +144,18 @@
                             params: {
                                 state: 'report',
                                 card: card,
-                                pageVm: $root
+                                pageVm: {...$root, report: $parent.report},
+                                hideEmptyNodes: $parent.hideEmptyNodes
                             }
                         } -->
                         <!-- /ko -->
                     <!-- /ko -->
                 </div>
-                <!-- /ko -->
+            <!-- /ko -->
+            <!-- /ko -->
             <!-- /ko -->
         </div>
     </div>
     <!--/ko-->
 
-    {% endblock body %}
+{% endblock body %}

@@ -33,9 +33,23 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("operation", nargs="?")
 
-        parser.add_argument("-s", "--source", action="store", dest="source", default="", help="Widget json file to be loaded")
+        parser.add_argument(
+            "-s",
+            "--source",
+            action="store",
+            dest="source",
+            default="",
+            help="Widget json file to be loaded",
+        )
 
-        parser.add_argument("-n", "--name", action="store", dest="name", default="", help="The name of the report template to unregister")
+        parser.add_argument(
+            "-n",
+            "--name",
+            action="store",
+            dest="name",
+            default="",
+            help="The name of the report template to unregister",
+        )
 
     def handle(self, *args, **options):
         if options["operation"] == "register":
@@ -66,7 +80,11 @@ class Command(BaseCommand):
             uuid.UUID(details["templateid"])
         except:
             details["templateid"] = str(uuid.uuid4())
-            print("Registering report template with templateid: {}".format(details["templateid"]))
+            print(
+                "Registering report template with templateid: {}".format(
+                    details["templateid"]
+                )
+            )
 
         instance = models.ReportTemplate(
             templateid=details["templateid"],
@@ -75,6 +93,52 @@ class Command(BaseCommand):
             component=details["component"],
             componentname=details["componentname"],
             defaultconfig=details["defaultconfig"],
+            preload_resource_data=details.get("preload_resource_data", True),
         )
 
         instance.save()
+
+    def update(self, source):
+        """
+        Updates an existing report template in the arches db
+
+        """
+
+        import json
+
+        details = {}
+
+        with open(source) as f:
+            details = json.load(f)
+
+        instance = models.ReportTemplate.objects.get(name=details["name"])
+        instance.description = details["description"]
+        instance.component = details["component"]
+        instance.componentname = details["componentname"]
+        instance.defaultconfig = details["defaultconfig"]
+        instance.save()
+
+    def unregister(self, name):
+        """
+        Removes the report template from the system
+
+        """
+
+        try:
+            instance = models.ReportTemplate.objects.get(name=name)
+            instance.delete()
+        except Exception as e:
+            print(e)
+
+    def list(self):
+        """
+        Lists registered report templates
+
+        """
+
+        try:
+            instances = models.ReportTemplate.objects.all()
+            for instance in instances:
+                print(instance.name)
+        except Exception as e:
+            print(e)

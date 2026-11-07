@@ -16,53 +16,79 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
+import logging
 import os
-from datetime import datetime
+
 from django.contrib.gis.geos import GEOSGeometry
 from django.core.cache import cache
-from django.http import HttpResponseNotFound
+from django.db import connection
+from django.http import Http404
 from django.shortcuts import render
-from django.utils.translation import ugettext as _
-from arches.app.models import models
+from django.utils.translation import gettext as _
+from arches.app.models.models import (
+    MapMarker,
+    GraphModel,
+    DDataType,
+    Widget,
+    ReportTemplate,
+    CardComponent,
+    Geocoder,
+    SearchExportHistory,
+)
 from arches.app.models.concept import Concept
-from arches.app.models.system_settings import settings
+from arches.app.utils import import_class_from_string
 from arches.app.utils.response import JSONResponse, JSONErrorResponse
-from arches.app.datatypes.datatypes import DataTypeFactory
 from arches.app.utils.betterJSONSerializer import JSONSerializer, JSONDeserializer
-from arches.app.search.search_engine_factory import SearchEngineFactory
-from arches.app.search.elasticsearch_dsl_builder import Bool, Match, Query, Terms, MaxAgg, Aggregation
+from arches.app.search.elasticsearch_dsl_builder import Query
 from arches.app.search.search_export import SearchResultsExporter
 from arches.app.search.time_wheel import TimeWheel
 from arches.app.search.components.base import SearchFilterFactory
 from arches.app.views.base import MapBaseManagerView
-from arches.app.views.concept import get_preflabel_from_conceptid
-from arches.app.utils.permission_backend import get_nodegroups_by_perm, user_is_resource_reviewer
+from arches.app.utils import permission_backend
+from arches.app.utils.permission_backend import (
+    get_nodegroups_by_perm,
+    user_is_resource_reviewer,
+)
+from arches.app.utils.decorators import group_required
 import arches.app.utils.zip as zip_utils
 import arches.app.utils.task_management as task_management
+from arches.app.utils.data_management.resources.formats.htmlfile import HtmlWriter
 import arches.app.tasks as tasks
 from io import StringIO
+from tempfile import NamedTemporaryFile
+from arches.app.models.system_settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 class SearchView(MapBaseManagerView):
     def get(self, request):
-        map_layers = models.MapLayer.objects.all()
-        map_markers = models.MapMarker.objects.all()
-        map_sources = models.MapSource.objects.all()
+        map_markers = MapMarker.objects.all()
         resource_graphs = (
-            models.GraphModel.objects.exclude(pk=settings.SYSTEM_SETTINGS_RESOURCE_MODEL_ID)
+            GraphModel.objects.exclude(pk=settings.SYSTEM_SETTINGS_RESOURCE_MODEL_ID)
             .exclude(isresource=False)
-            .exclude(isactive=False)
+            .exclude(is_active=False)
+            .exclude(source_identifier__isnull=False)
         )
-        geocoding_providers = models.Geocoder.objects.all()
-        search_components = models.SearchComponent.objects.all()
-        datatypes = models.DDataType.objects.all()
+        geocoding_providers = Geocoder.objects.all()
+        search_component_factory = SearchFilterFactory(request)
+        searchview_instance = search_component_factory.get_searchview_instance()
+        if not searchview_instance:
+            raise Http404(_("Search view instance not found"))
+        search_components = searchview_instance.get_searchview_filters()
+
+        datatypes = DDataType.objects.all()
+        widgets = Widget.objects.all()
+        templates = ReportTemplate.objects.all()
+        card_components = CardComponent.objects.all()
 
         context = self.get_context_data(
-            map_layers=map_layers,
             map_markers=map_markers,
-            map_sources=map_sources,
             geocoding_providers=geocoding_providers,
             search_components=search_components,
+            widgets=widgets,
+            report_templates=templates,
+            card_components=card_components,
             main_script="views/search",
             resource_graphs=resource_graphs,
             datatypes=datatypes,
@@ -89,123 +115,116 @@ class SearchView(MapBaseManagerView):
         context["nav"]["search"] = False
         context["nav"]["help"] = {
             "title": _("Searching the Database"),
-            "template": "search-help",
+            "templates": ["search-help"],
         }
         context["celery_running"] = task_management.check_if_celery_available()
+        context["export_html_templates"] = (
+            HtmlWriter.get_graphids_with_export_template()
+        )
+        term_search_types = [
+            {
+                "type": term_search_type["type"],
+                "label": str(term_search_type["label"]),
+                "key": term_search_type["key"],
+            }
+            for term_search_type in settings.TERM_SEARCH_TYPES
+        ]
+        context["term_search_types"] = JSONSerializer().serialize(term_search_types)
 
         return render(request, "views/search.htm", context)
 
 
 def home_page(request):
-    return render(request, "views/search.htm", {"main_script": "views/search",})
+    return render(
+        request,
+        "views/search.htm",
+        {
+            "main_script": "views/search",
+        },
+    )
 
 
 def search_terms(request):
-    lang = request.GET.get("lang", settings.LANGUAGE_CODE)
-    se = SearchEngineFactory().create()
+    lang = request.GET.get("lang", request.LANGUAGE_CODE)
     searchString = request.GET.get("q", "")
-    user_is_reviewer = user_is_resource_reviewer(request.user)
-
-    i = 0
     ret = {}
-    for index in ["terms", "concepts"]:
-        query = Query(se, start=0, limit=0)
-        boolquery = Bool()
-        boolquery.should(Match(field="value", query=searchString.lower(), type="phrase_prefix"))
-        boolquery.should(Match(field="value.folded", query=searchString.lower(), type="phrase_prefix"))
-        boolquery.should(
-            Match(field="value.folded", query=searchString.lower(), fuzziness="AUTO", prefix_length=settings.SEARCH_TERM_SENSITIVITY)
-        )
 
-        if user_is_reviewer is False and index == "terms":
-            boolquery.filter(Terms(field="provisional", terms=["false"]))
-
-        query.add_query(boolquery)
-        base_agg = Aggregation(
-            name="value_agg", type="terms", field="value.raw", size=settings.SEARCH_DROPDOWN_LENGTH, order={"max_score": "desc"}
-        )
-        nodegroupid_agg = Aggregation(name="nodegroupid", type="terms", field="nodegroupid")
-        top_concept_agg = Aggregation(name="top_concept", type="terms", field="top_concept")
-        conceptid_agg = Aggregation(name="conceptid", type="terms", field="conceptid")
-        max_score_agg = MaxAgg(name="max_score", script="_score")
-
-        top_concept_agg.add_aggregation(conceptid_agg)
-        base_agg.add_aggregation(max_score_agg)
-        base_agg.add_aggregation(top_concept_agg)
-        base_agg.add_aggregation(nodegroupid_agg)
-        query.add_aggregation(base_agg)
-
-        ret[index] = []
-        results = query.search(index=index)
-        if results is not None:
-            for result in results["aggregations"]["value_agg"]["buckets"]:
-                if len(result["top_concept"]["buckets"]) > 0:
-                    for top_concept in result["top_concept"]["buckets"]:
-                        top_concept_id = top_concept["key"]
-                        top_concept_label = get_preflabel_from_conceptid(top_concept["key"], lang)["value"]
-                        for concept in top_concept["conceptid"]["buckets"]:
-                            ret[index].append(
-                                {
-                                    "type": "concept",
-                                    "context": top_concept_id,
-                                    "context_label": top_concept_label,
-                                    "id": i,
-                                    "text": result["key"],
-                                    "value": concept["key"],
-                                }
-                            )
-                        i = i + 1
-                else:
-                    ret[index].append(
-                        {
-                            "type": "term",
-                            "context": "",
-                            "context_label": get_resource_model_label(result),
-                            "id": i,
-                            "text": result["key"],
-                            "value": result["key"],
-                        }
-                    )
-                    i = i + 1
-
+    for term_search_type in settings.TERM_SEARCH_TYPES:
+        try:
+            module = term_search_type["module"]
+            index = import_class_from_string(module)
+            ret[term_search_type["key"]] = index.search_terms(
+                searchString, lang, request.user, term_search_type
+            )
+        except (KeyError, ValueError):
+            pass
     return JSONResponse(ret)
 
 
-def get_resource_model_label(result):
-    if len(result["nodegroupid"]["buckets"]) > 0:
-        for nodegroup in result["nodegroupid"]["buckets"]:
-            nodegroup_id = nodegroup["key"]
-            node = models.Node.objects.get(nodeid=nodegroup_id)
-            graph = node.graph
-        return "{0} - {1}".format(graph.name, node.name)
-    else:
-        return ""
-
-
+@group_required("Resource Exporter")
 def export_results(request):
-
     total = int(request.GET.get("total", 0))
     format = request.GET.get("format", "tilecsv")
-    download_limit = settings.SEARCH_EXPORT_IMMEDIATE_DOWNLOAD_THRESHOLD
-    if total > download_limit:
-        celery_worker_running = task_management.check_if_celery_available()
-        if celery_worker_running is True:
-            request_values = dict(request.GET)
-            request_values["path"] = request.get_full_path()
-            result = tasks.export_search_results.apply_async(
-                (request.user.id, request_values, format), link=tasks.update_user_task_record.s(), link_error=tasks.log_error.s()
-            )
+    report_link = request.GET.get("reportlink", False)
+    app_name = settings.APP_NAME
+    if format == "html":
+        download_limit = settings.SEARCH_EXPORT_IMMEDIATE_DOWNLOAD_THRESHOLD_HTML_FORMAT
+    else:
+        download_limit = settings.SEARCH_EXPORT_IMMEDIATE_DOWNLOAD_THRESHOLD
+
+    if total > download_limit and format != "geojson":
+        if (settings.RESTRICT_CELERY_EXPORT_FOR_ANONYMOUS_USER is True) and (
+            request.user.username == "anonymous"
+        ):
             message = _(
-                f"{total} instances have been submitted for export. \
-                Click the Bell icon to check for a link to download your data"
-            )
-            return JSONResponse({"success": True, "message": message})
-        else:
-            message = _(f"Your search exceeds the {download_limit} instance download limit. Please refine your search")
+                "Your search exceeds the {download_limit} instance download limit.  \
+                Anonymous users cannot run an export exceeding this limit.  \
+                Please sign in with your {app_name} account or refine your search"
+            ).format(**locals())
             return JSONResponse({"success": False, "message": message})
+        else:
+            celery_worker_running = task_management.check_if_celery_available()
+            if celery_worker_running is True:
+                request_values = dict(request.GET)
+                request_values["path"] = request.get_full_path()
+                result = tasks.export_search_results.apply_async(
+                    (request.user.id, request_values, format, report_link),
+                    link=tasks.update_user_task_record.s(),
+                    link_error=tasks.log_error.s(),
+                )
+                message = _(
+                    "{total} instances have been submitted for export. \
+                    Click the Bell icon to check for a link to download your data"
+                ).format(**locals())
+                return JSONResponse({"success": True, "message": message})
+            else:
+                message = _(
+                    "Your search exceeds the {download_limit} instance download limit. Please refine your search"
+                ).format(**locals())
+                return JSONResponse({"success": False, "message": message})
+
+    elif format == "tilexl":
+        exporter = SearchResultsExporter(search_request=request)
+        export_files, export_info = exporter.export(format, report_link)
+        wb = export_files[0]["outputfile"]
+        try:
+            with NamedTemporaryFile(delete=False) as tmp:
+                wb.save(tmp.name)
+                tmp.seek(0)
+                stream = tmp.read()
+                export_files[0]["outputfile"] = tmp
+                result = zip_utils.zip_response(
+                    export_files, zip_file_name=f"{settings.APP_NAME}_export.zip"
+                )
+        except OSError:
+            logger.error("Temp file could not be created.")
+            raise
+        os.unlink(tmp.name)
+        return result
     else:
         exporter = SearchResultsExporter(search_request=request)
-        export_files, export_info = exporter.export(format)
+        export_files, export_info = exporter.export(format, report_link)
+
         if len(export_files) == 0 and format == "shp":
             message = _(
                 "Either no instances were identified for export or no resources have exportable geometry nodes\
@@ -215,88 +234,63 @@ def export_results(request):
             dest = StringIO()
             dest.write(message)
             export_files.append({"name": "error.txt", "outputfile": dest})
-        return zip_utils.zip_response(export_files, zip_file_name=f"{settings.APP_NAME}_export.zip")
+        return zip_utils.zip_response(
+            export_files, zip_file_name=f"{settings.APP_NAME}_export.zip"
+        )
 
 
-def append_instance_permission_filter_dsl(request, search_results_object):
+def append_instance_permission_filter_dsl(request, search_query_object):
     if request.user.is_superuser is False:
-        has_access = Bool()
-        terms = Terms(field="permissions.users_with_no_access", terms=[str(request.user.id)])
-        has_access.must_not(terms)
-        search_results_object["query"].add_query(has_access)
+        query: Query = search_query_object.get("query", None)
+        if query:
+            inclusions = permission_backend.get_permission_inclusions()
+            for inclusion in inclusions:
+                query.include(inclusion)
+            query.add_query(
+                permission_backend.get_permission_search_filter(request.user)
+            )
 
 
-def search_results(request):
-    for_export = request.GET.get("export")
-    total = int(request.GET.get("total", "0"))
-    se = SearchEngineFactory().create()
-    search_results_object = {"query": Query(se)}
+def get_dsl_from_search_string(request):
+    dsl = search_results(request, returnDsl=True).dsl
+    return JSONResponse(dsl)
 
-    include_provisional = get_provisional_type(request)
-    permitted_nodegroups = get_permitted_nodegroups(request.user)
 
+def search_results(request, returnDsl=False):
     search_filter_factory = SearchFilterFactory(request)
+    searchview_component_instance = search_filter_factory.get_searchview_instance()
+    if not searchview_component_instance:
+        unavailable_searchview_name = search_filter_factory.get_searchview_name()
+        message = _("No search-view named {0}").format(unavailable_searchview_name)
+        return JSONErrorResponse(
+            _("Search Failed"),
+            message,
+            status=400,
+        )
+
     try:
-        for filter_type, querystring in list(request.GET.items()) + [("search-results", "")]:
-            search_filter = search_filter_factory.get_filter(filter_type)
-            if search_filter:
-                search_filter.append_dsl(search_results_object, permitted_nodegroups, include_provisional)
-        append_instance_permission_filter_dsl(request, search_results_object)
-    except Exception as err:
-        return JSONErrorResponse(message=err)
+        response_object, search_query_object = (
+            searchview_component_instance.handle_search_results_query(
+                search_filter_factory, returnDsl
+            )
+        )
+        if returnDsl:
+            return search_query_object.pop("query")
+        else:
+            return JSONResponse(content=response_object)
+    except Exception as e:
+        message = _("There was an error retrieving the search results")
+        try:
+            message = e.args[0].get("message", message)
+        except:
+            logger.exception("Error retrieving search results:")
+            logger.exception(e)
 
-    dsl = search_results_object.pop("query", None)
-    dsl.include("graph_id")
-    dsl.include("root_ontology_class")
-    dsl.include("resourceinstanceid")
-    dsl.include("points")
-    dsl.include("permissions.users_without_read_perm")
-    dsl.include("permissions.users_without_edit_perm")
-    dsl.include("permissions.users_without_delete_perm")
-    dsl.include("geometries")
-    dsl.include("displayname")
-    dsl.include("displaydescription")
-    dsl.include("map_popup")
-    dsl.include("provisional_resource")
-    if request.GET.get("tiles", None) is not None:
-        dsl.include("tiles")
-
-    if for_export is True:
-        results = dsl.search(index="resources", scroll="1m")
-        scroll_id = results["_scroll_id"]
-
-        if total <= settings.SEARCH_EXPORT_LIMIT:
-            pages = (total // settings.SEARCH_RESULT_LIMIT) + 1
-        if total > settings.SEARCH_EXPORT_LIMIT:
-            pages = int(settings.SEARCH_EXPORT_LIMIT // settings.SEARCH_RESULT_LIMIT) - 1
-        for page in range(pages):
-            results_scrolled = dsl.se.es.scroll(scroll_id=scroll_id, scroll="1m")
-            results["hits"]["hits"] += results_scrolled["hits"]["hits"]
-    else:
-        results = dsl.search(index="resources")
-
-    ret = {}
-    if results is not None:
-        # allow filters to modify the results
-        for filter_type, querystring in list(request.GET.items()) + [("search-results", "")]:
-            search_filter = search_filter_factory.get_filter(filter_type)
-            if search_filter:
-                search_filter.post_search_hook(search_results_object, results, permitted_nodegroups)
-
-        ret["results"] = results
-
-        for key, value in list(search_results_object.items()):
-            ret[key] = value
-
-        ret["reviewer"] = user_is_resource_reviewer(request.user)
-        ret["timestamp"] = datetime.now()
-        ret["total_results"] = dsl.count(index="resources")
-        ret["userid"] = request.user.id
-        return JSONResponse(ret)
-
-    else:
-        ret = {"message": _("There was an error retrieving the search results")}
-        return JSONResponse(ret, status=500)
+        return JSONErrorResponse(
+            _("Search Failed"),
+            message,
+            status=500,
+        )
 
 
 def get_provisional_type(request):
@@ -307,7 +301,9 @@ def get_provisional_type(request):
     """
 
     result = False
-    provisional_filter = JSONDeserializer().deserialize(request.GET.get("provisional-filter", "[]"))
+    provisional_filter = JSONDeserializer().deserialize(
+        request.GET.get("provisional-filter", "[]")
+    )
     user_is_reviewer = user_is_resource_reviewer(request.user)
     if user_is_reviewer is not False:
         if len(provisional_filter) == 0:
@@ -329,17 +325,31 @@ def get_provisional_type(request):
 
 
 def get_permitted_nodegroups(user):
-    return [str(nodegroup.pk) for nodegroup in get_nodegroups_by_perm(user, "models.read_nodegroup")]
+    return get_nodegroups_by_perm(user, "models.read_nodegroup")
 
 
 def buffer(request):
     spatial_filter = JSONDeserializer().deserialize(
-        request.GET.get("filter", {"geometry": {"type": "", "coordinates": []}, "buffer": {"width": "0", "unit": "ft"}})
+        request.GET.get(
+            "filter",
+            {
+                "geometry": {"type": "", "coordinates": []},
+                "buffer": {"width": "0", "unit": "ft"},
+            },
+        )
     )
 
-    if spatial_filter["geometry"]["coordinates"] != "" and spatial_filter["geometry"]["type"] != "":
+    if (
+        spatial_filter["geometry"]["coordinates"] != ""
+        and spatial_filter["geometry"]["type"] != ""
+    ):
         return JSONResponse(
-            _buffer(spatial_filter["geometry"], spatial_filter["buffer"]["width"], spatial_filter["buffer"]["unit"]), geom_format="json"
+            _buffer(
+                spatial_filter["geometry"],
+                spatial_filter["buffer"]["width"],
+                spatial_filter["buffer"]["unit"],
+            ),
+            geom_format="json",
         )
 
     return JSONResponse()
@@ -357,11 +367,20 @@ def _buffer(geojson, width=0, unit="ft"):
     if width > 0:
         if unit == "ft":
             width = width / 3.28084
-
-        geom.transform(settings.ANALYSIS_COORDINATE_SYSTEM_SRID)
-        geom = geom.buffer(width)
-        geom.transform(4326)
-
+        with connection.cursor() as cursor:
+            # Transform geom to the analysis SRID, buffer it, and transform it back to wgs84
+            cursor.execute(
+                """SELECT ST_TRANSFORM(
+                    ST_BUFFER(ST_TRANSFORM(ST_SETSRID(%s::geometry, 4326), %s), %s),
+                4326)""",
+                (
+                    geom.hex.decode("utf-8"),
+                    settings.ANALYSIS_COORDINATE_SYSTEM_SRID,
+                    width,
+                ),
+            )
+            res = cursor.fetchone()
+            geom = GEOSGeometry(res[0], srid=4326)
     return geom
 
 
@@ -386,9 +405,11 @@ def get_export_file(request):
     user = request.user
     url = None
     if exportid is not None:
-        export = models.SearchExportHistory.objects.get(pk=exportid)
+        export = SearchExportHistory.objects.get(pk=exportid)
         try:
             url = export.downloadfile.url
             return JSONResponse({"message": _("Downloading"), "url": url}, indent=4)
         except ValueError:
-            return JSONResponse({"message": _("The requested file is no longer available")}, indent=4)
+            return JSONResponse(
+                {"message": _("The requested file is no longer available")}, indent=4
+            )

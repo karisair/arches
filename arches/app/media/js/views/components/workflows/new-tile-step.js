@@ -1,45 +1,86 @@
-define([
-    'underscore',
-    'jquery',
-    'arches',
-    'knockout',
-    'knockout-mapping',
-    'models/graph',
-    'viewmodels/card',
-    'viewmodels/provisional-tile',
-    'viewmodels/alert'
-], function(_, $, arches, ko, koMapping, GraphModel, CardViewModel, ProvisionalTileViewModel, AlertViewModel) {
-    function viewModel(params) {
-        var self = this;
-        if (params.workflow) {
-            if (!params.resourceid()) {
-                params.resourceid(params.workflow.state.resourceid);
-            }
-            if (params.workflow.state.steps[params._index]) {
-                params.tileid(params.workflow.state.steps[params._index].tileid);
-            }
+import _ from 'underscore';
+import $ from 'jquery';
+import ko from 'knockout';
+import koMapping from 'knockout-mapping';
+import arches from 'arches';
+import GraphModel from 'models/graph';
+import CardViewModel from 'viewmodels/card';
+import ProvisionalTileViewModel from 'viewmodels/provisional-tile';
+import AlertViewModel from 'viewmodels/alert';
+import newTileStepTemplate from 'templates/views/components/workflows/new-tile-step.htm';
+
+
+function viewModel(params) {
+    var self = this;
+
+    this.resourceId = ko.observable(ko.unwrap(params.resourceid));
+    this.resourceId.subscribe(function(id) {
+        params.resourceid(id);
+    });
+
+    var cachedValue = ko.unwrap(params.value);
+    if (cachedValue) {
+        if (cachedValue.tileid) {
+            params.tileid(cachedValue.tileid);
         }
-        var url = arches.urls.api_card + (ko.unwrap(params.resourceid) || ko.unwrap(params.graphid));
-        this.card = ko.observable();
-        this.tile = ko.observable();
-        this.loading = params.loading || ko.observable(false);
-        this.alert = params.alert || ko.observable(null);
-        this.resourceId = params.resourceid || ko.observable();
-        this.complete = params.complete || ko.observable();
-        this.completeOnSave = params.completeOnSave === false ? false : true;
-        this.loading(true);
-        var flattenTree = function(parents, flatList) {
-            _.each(ko.unwrap(parents), function(parent) {
-                flatList.push(parent);
-                var childrenKey = parent.tiles ? 'tiles' : 'cards';
-                flattenTree(
-                    ko.unwrap(parent[childrenKey]),
-                    flatList
-                );
+        if (cachedValue.resourceid) {
+            self.resourceId(cachedValue.resourceid);
+        }
+    }
+    
+    if (!self.resourceId() && params.workflow && ko.unwrap(params.workflow.resourceId)) {
+        self.resourceId(ko.unwrap(params.workflow.resourceId));
+    } 
+
+    this.getCardResourceIdOrGraphId = function() { // override for different cases
+        return (ko.unwrap(this.resourceId) || ko.unwrap(params.graphid));
+    };
+
+    this.card = ko.observable();
+    this.tile = ko.observable();
+    params.hasDirtyTile(false);
+
+    this.tile.subscribe(function(tile) {
+        if (tile && params.hasDirtyTile) {
+            tile.dirty.subscribe(function(val) {
+                /* 
+                    for proper function, need to interact with card dirty state inside tile subscription 
+                */
+                ((self.card() && self.card().isDirty()) || val) ? params.hasDirtyTile(true) : params.hasDirtyTile(false);
             });
-            return flatList;
-        };
-        self.topCards = [];
+        }
+    });
+    
+    this.loading = params.loading || ko.observable(false);
+    this.alert = params.alert || ko.observable(null);
+    
+    this.complete = params.complete || ko.observable();
+    this.complete.subscribe(function(isComplete) {
+        if (isComplete && params.value) {
+            params.value(params.defineStateProperties());
+        }
+    });
+
+    this.completeOnSave = params.completeOnSave === false ? false : true;
+
+    this.loading(true);
+
+    this.customCardLabel = params.customCardLabel || false;
+    var flattenTree = function(parents, flatList) {
+        _.each(ko.unwrap(parents), function(parent) {
+            flatList.push(parent);
+            var childrenKey = parent.tiles ? 'tiles' : 'cards';
+            flattenTree(
+                ko.unwrap(parent[childrenKey]),
+                flatList
+            );
+        });
+        return flatList;
+    };
+    self.topCards = [];
+
+    this.getJSON = function() {
+        var url = arches.urls.api_card + this.getCardResourceIdOrGraphId();
 
         $.getJSON(url, function(data) {
             var handlers = {
@@ -92,6 +133,26 @@ define([
                 });
             });
 
+            self.card.subscribe(function(card){
+                if (card) {
+                    card.context = 'workflow';
+
+                    if (params.preSaveCallback) {
+                        card.preSaveCallback = params.preSaveCallback;
+                    }
+                    if (params.postSaveCallback) {
+                        card.postSaveCallback = params.postSaveCallback;
+                    }
+                }
+                if (ko.unwrap(card.widgets) && params.hiddenNodes) {
+                    card.widgets().forEach(function(widget){
+                        if (params.hiddenNodes.indexOf(widget.node_id()) > -1) {
+                            widget.visible(false);
+                        }
+                    });
+                }
+            });
+
             self.topCards.forEach(function(topCard) {
                 topCard.topCards = self.topCards;
             });
@@ -119,6 +180,7 @@ define([
                     if (ko.unwrap(params.parenttileid) && item.parent && ko.unwrap(params.parenttileid) !== item.parent.tileid) {
                         return;
                     }
+                    if (self.customCardLabel) item.model.name(ko.unwrap(self.customCardLabel));
                     self.card(item);
                     if (ko.unwrap(params.tileid)) {
                         ko.unwrap(item.tiles).forEach(function(tile) {
@@ -135,67 +197,94 @@ define([
             // commented the line below because it causes steps to automatically advance on page reload
             // self.complete(!!ko.unwrap(params.tileid));
         });
+    };
 
-        self.getTiles = function(nodegroupId, tileId) {
-            var tiles = [];
-            flattenTree(self.topCards, []).forEach(function(item) {
-                if (item.constructor.name === 'CardViewModel' && item.nodegroupid === nodegroupId) {
-                    tiles = tiles.concat(ko.unwrap(item.tiles));
-                }
+    self.getTiles = function(nodegroupId, tileId) {
+        var tiles = [];
+        flattenTree(self.topCards, []).forEach(function(item) {
+            if (item.constructor.name === 'CardViewModel' && item.nodegroupid === nodegroupId) {
+                tiles = tiles.concat(ko.unwrap(item.tiles));
+            }
+        });
+        if (tileId) {
+            tiles = tiles.filter(function(tile) {
+                return tile.tileid === tileId;
             });
-            if (tileId) {
-                tiles = tiles.filter(function(tile) {
-                    return tile.tileid === tileId;
-                });
-            }
-            return tiles;
-        };
-
-        params.tile = self.tile;
-
-        params.getStateProperties = function(){
-            // Collects those properties that you want to set to the state.
-            var wastebin = !!(ko.unwrap(params.wastebin)) ? koMapping.toJS(params.wastebin) : undefined;
-            if (wastebin && ko.unwrap(wastebin.hasOwnProperty('resourceid'))) {
-                wastebin.resourceid = ko.unwrap(params.resourceid);
-            }
-            return {
-                resourceid: ko.unwrap(params.resourceid),
-                tile: !!(ko.unwrap(params.tile)) ? koMapping.toJS(params.tile().data) : undefined,
-                tileid: !!(ko.unwrap(params.tile)) ? ko.unwrap(params.tile().tileid): undefined,
-                wastebin: wastebin
-            };
-        };
-
-
-        this.setStateProperties = function(){
-            //Sets properties in getStateProperties to the state.
-            if (params.workflow) {
-                params.workflow.state.steps[params._index] = params.getStateProperties();
-            }
-        };
-
-        self.onSaveSuccess = function(tiles) {
-            var tile;
-            if (tiles.length > 0 || typeof tiles == 'object') {
-                tile = tiles[0] || tiles;
-                params.resourceid(tile.resourceinstance_id);
-                params.tileid(tile.tileid);
-                self.resourceId(tile.resourceinstance_id);
-            }
-            self.setStateProperties();
-            if (params.workflow) {
-                params.workflow.updateUrl();
-            }
-            if (self.completeOnSave === true) { self.complete(true); }
-        };
-
-    }
-    ko.components.register('new-tile-step', {
-        viewModel: viewModel,
-        template: {
-            require: 'text!templates/views/components/workflows/new-tile-step.htm'
         }
-    });
-    return viewModel;
+        return tiles;
+    };
+
+    params.tile = self.tile;
+
+    if(ko.unwrap(params.getJSONOnLoad) !== false) {
+        this.getJSON();
+    }
+
+    params.defineStateProperties = function(){
+        // Collects those properties that you want to set to the state.
+        /** 
+         * Wastebin
+         * Note that wastebin as set on the workflow step params is inclusive; only things identified by those keys (e.g. tile, resourceid) will be deleted on quit. Otherwise if no wastebin params given, nothing will be deleted on quit.
+         * 
+         * -- If the workflow edits/creates one and only one new resource, resourceid need only be named in the first step's params' wastebin like so: wastebin: {resourceid:null}
+         * This will automatically cascade/delete all tiles generated from this resource.
+         * 
+         * -- If not every step's generated tile belongs to the same resource or you want to selectively delete a tile from a step, {tile:null} should be declared in every step's params' wastebin where you want the tile from that step to be deleted on quit.
+         * 
+         * Overriding this method:
+         * Keep in mind that anything extending newTileStep that overrides this method should include similar logic to handle for wastebin if there is a wastebin use case for that particular step in the workflow.
+        **/
+        var wastebin = !!(ko.unwrap(params.wastebin)) ? koMapping.toJS(params.wastebin) : undefined;
+        var resourceId = ko.unwrap(params.resourceid);
+
+        if (resourceId) {
+            if (wastebin && 'resources' in wastebin) {
+                wastebin.resources.push(resourceId);
+            }
+            if (wastebin && 'resourceid' in wastebin) {
+                wastebin.resourceid = resourceId;
+            }
+        }
+        if (wastebin && 'tile' in wastebin) {
+            if (!!ko.unwrap(params.tile)) {
+                wastebin.tile = koMapping.toJS(params.tile().data);
+                wastebin.tile.tileid = (ko.unwrap(params.tile)).tileid;
+                wastebin.tile.resourceinstance_id = (ko.unwrap(params.tile)).resourceinstance_id;
+            }
+        }
+        
+        ko.mapping.fromJS(wastebin, {}, params.wastebin);
+        
+        return {
+            resourceid: resourceId,
+            tile: !!(ko.unwrap(params.tile)) ? koMapping.toJS(params.tile().data) : undefined,
+            tileid: !!(ko.unwrap(params.tile)) ? ko.unwrap(params.tile().tileid): undefined,
+            wastebin: wastebin
+        };
+    };
+    /* calling on init to give workflow access to wastebin on load */ 
+    params.defineStateProperties();
+
+    self.onSaveSuccess = function(tiles) {
+        var tile;
+        
+        if (tiles.length > 0 || typeof tiles == 'object') {
+            tile = tiles[0] || tiles;
+
+            params.tileid(tile.tileid);
+            self.resourceId(tile.resourceinstance_id);
+        }
+
+        if (params.value) {
+            params.value(params.defineStateProperties());
+        }
+        
+        if (self.completeOnSave === true) { self.complete(true); }
+    };
+
+}
+ko.components.register('new-tile-step', {
+    viewModel: viewModel,
+    template: newTileStepTemplate,
 });
+export default viewModel;

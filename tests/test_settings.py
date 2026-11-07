@@ -16,16 +16,16 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
-from arches.settings import *
 import os
-import inspect
 
+from arches.settings import *
+
+from django.utils.translation import gettext_lazy as _
 
 PACKAGE_NAME = "arches"
-ROOT_DIR = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-ROOT_DIR = os.path.normpath(os.path.join(ROOT_DIR, "..", "arches"))
-TEST_ROOT = os.path.normpath(os.path.join(ROOT_DIR, "..", "tests"))
 APP_ROOT = ""
+TEST_ROOT = os.path.normpath(os.path.join(ROOT_DIR, "..", "tests"))
+STATICFILES_DIRS = []
 
 # LOAD_V3_DATA_DURING_TESTS = True will engage the most extensive the of the v3
 # data migration tests, which could add over a minute to the test process. It's
@@ -33,59 +33,97 @@ APP_ROOT = ""
 # and run in specific cases at the discretion of the developer.
 LOAD_V3_DATA_DURING_TESTS = False
 
-SEARCH_BACKEND = "tests.base_test.TestSearchEngine"
-
-RESOURCE_GRAPH_LOCATIONS = (os.path.join(TEST_ROOT, "fixtures", "resource_graphs"),)
+RESOURCE_GRAPH_LOCATIONS = [
+    os.path.join(TEST_ROOT, "fixtures", "resource_graphs"),
+    os.path.join(
+        TEST_ROOT,
+        "fixtures",
+        "testing_prj",
+        "testing_prj",
+        "pkg",
+        "graphs",
+        "resource_models",
+    ),
+    os.path.join(TEST_ROOT, "fixtures", "jsonld_base", "models"),
+]
+REFERENCE_DATA_FIXTURE_LOCATION = os.path.join(
+    TEST_ROOT, "fixtures", "testing_prj", "testing_prj", "pkg", "reference_data"
+)
 
 ONTOLOGY_FIXTURES = os.path.join(TEST_ROOT, "fixtures", "ontologies", "test_ontology")
 ONTOLOGY_PATH = os.path.join(TEST_ROOT, "fixtures", "ontologies", "cidoc_crm")
+MEDIA_ROOT = os.path.join(TEST_ROOT, "fixtures", "data")
 
-BUSISNESS_DATA_FILES = (
+BUSINESS_DATA_FILES = (
     # Put strings here, like "/home/html/django_templates" or "C:/www/django/templates".
     # Always use forward slashes, even on Windows.
     # Don't forget to use absolute paths, not relative paths.
 )
 
+# Class for custom ES document generator and search functionality
+ES_MAPPING_MODIFIER_CLASSES = ["tests.views.search_tests.TestEsMappingModifier"]
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+    },
+    "user_permission": {
+        "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+        "LOCATION": "user_permission_cache",
+    },
+}
+
+LOGGING["loggers"]["arches"]["level"] = "ERROR"
+
 ELASTICSEARCH_PREFIX = "test"
 
-# Use nose to run all tests
-TEST_RUNNER = "django_nose.NoseTestSuiteRunner"
+TEST_RUNNER = "arches.test.runner.ArchesTestRunner"
+SILENCED_SYSTEM_CHECKS.append(
+    "arches.W001"
+)  # Cache backend does not support rate-limiting
+
+FILE_TYPE_CHECKING = "lenient"
 
 # could add Chrome, PhantomJS etc... here
 LOCAL_BROWSERS = []  # ['Firefox']
 
-# these are set in Travis CI
-SAUCE_USERNAME = os.environ.get("SAUCE_USERNAME")
-SAUCE_ACCESS_KEY = os.environ.get("SAUCE_ACCESS_KEY")
+ENABLE_USER_SIGNUP = True
+FORCE_USER_SIGNUP_EMAIL_AUTHENTICATION = True
 
-RUN_LOCAL = True
-if SAUCE_USERNAME and SAUCE_ACCESS_KEY:
-    RUN_LOCAL = False
+ENABLE_TWO_FACTOR_AUTHENTICATION = False
+FORCE_TWO_FACTOR_AUTHENTICATION = False
 
-# browser/os combinations to use with saucelabs
-REMOTE_BROWSERS = [
-    # {"platform": "Windows 8.1",
-    #  "browserName": "internet explorer",
-    #  "version": "11"},
-    # {"platform": "Mac OS X 10.9",
-    #  "browserName": "chrome",
-    #  "version": "53"},
-    # {"platform": "Linux",
-    #  "browserName": "firefox",
-    #  "version": "45"}
+DATATYPE_LOCATIONS.append("tests.fixtures.datatypes")
+ELASTICSEARCH_HOSTS = [
+    {"scheme": "http", "host": "localhost", "port": ELASTICSEARCH_HTTP_PORT}
+]
+LANGUAGES = [
+    ("de", _("German")),
+    ("en", _("English")),
+    ("en-gb", _("British English")),
+    ("es", _("Spanish")),
+    ("ar", _("Arabic")),
 ]
 
-OVERRIDE_RESOURCE_MODEL_LOCK = True
+DOCKER = False
 
-# Tell nose to measure coverage on the 'foo' and 'bar' apps
-NOSE_ARGS = ["--with-coverage", "--nologcapture", "--cover-package=arches", "--verbosity=1", "--cover-erase"]
+PERMISSION_DEFAULTS = {}
 
-INSTALLED_APPS = INSTALLED_APPS + ("django_nose",)
+CELERY_CHECK_ONLY_INSPECT_BROKER = True
 
-
-DATATYPE_LOCATIONS.append('tests.fixtures.datatypes')
 
 try:
-    from settings_local import *
+    from arches.settings_local import *
 except ImportError:
     pass
+
+if DOCKER:
+    try:
+        from arches.settings_docker import *
+    except ImportError:
+        pass
+
+
+# Tests shouldn't depend on celery running, so overwrite after settings_local import
+# This is enough to fool check_if_celery_available()
+CELERY_BROKER_URL = ""

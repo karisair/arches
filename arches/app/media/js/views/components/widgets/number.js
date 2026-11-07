@@ -1,56 +1,75 @@
-define(['knockout', 'underscore', 'viewmodels/widget', 'bindings/formattedNumber'], function (ko, _, WidgetViewModel) {
-    /**
-    * registers a text-widget component for use in forms
-    * @function external:"ko.components".text-widget
-    * @param {object} params
-    * @param {number} params.value - the value being managed
-    * @param {function} params.config - observable containing config object
-    * @param {string} params.config().label - label to use alongside the text input
-    * @param {string} params.config().placeholder - default text to show in the text input
-    */
+import ko from 'knockout';
+import _ from 'underscore';
+import arches from 'arches';
+import WidgetViewModel from 'viewmodels/widget';
+import numberWidgetTemplate from 'templates/views/components/widgets/number.htm';
+import 'bindings/formattedNumber';
 
 
-    var NumberWidget = function(params) {
-        params.configKeys = ['placeholder', 'width', 'min', 'max', 'step', 'precision', 'prefix', 'suffix', 'defaultValue', 'format'];
+/**
+* registers a text-widget component for use in forms
+* @function external:"ko.components".text-widget
+* @param {object} params
+* @param {number} params.value - the value being managed
+* @param {function} params.config - observable containing config object
+* @param {string} params.config().label - label to use alongside the text input
+* @param {string} params.config().placeholder - default text to show in the text input
+* @param {string} params.config().uneditable - disables widget
+*/
 
-        WidgetViewModel.apply(this, [params]);
+var NumberWidget = function(params) {
+    params.configKeys = ['placeholder', 'width', 'min', 'max', 'step', 'precision', 'prefix', 'suffix', 'defaultValue', 'format', 'uneditable'];
+    this.preview = arches.graphs.length > 0;
 
-        var self = this;
+    WidgetViewModel.apply(this, [params]);
 
-        this.updateVal = ko.computed(function(){
-            if (self.value()){
-                var val = self.value();
-                if (typeof self.min() === 'number') {
-                    val = Number(val) < Number(self.min()) ? Number(self.min()) : Number(val);
-                }
+    var self = this;
 
-                if (typeof self.max() === 'number') {
-                    val = Number(val) > Number(self.max()) ? Number(self.max()) : Number(val);
-                }
+    this.disable = ko.computed(() => {
+        return ko.unwrap(self.disabled) || ko.unwrap(self.uneditable);
+    }, self);
 
-                if (self.precision()) {
-                    val = Number(val).toFixed(self.precision());
-                }
-                
+    this.updateVal = ko.computed(function(){
+        if (self.value() !== null && self.value() !== undefined) { //allow a value of 0 to pass
+            var val = self.value();
+            if (typeof self.min() === 'number') {
+                val = Number(val) < Number(self.min()) ? Number(self.min()) : Number(val);
             }
-            return val || self.value();
-        }, self).extend({throttle: 600});
 
-        this.value(this.updateVal());
+            if (typeof self.max() === 'number') {
+                val = Number(val) > Number(self.max()) ? Number(self.max()) : Number(val);
+            }
 
-        if (ko.isObservable(this.precision)) {
-            var precisionSubscription = this.precision.subscribe(function(val){
-                if (self.value() && val){
-                    self.value(Number(self.value()).toFixed(val));
-                }
-            }, self);
-            self.disposables.push(precisionSubscription);
+            if (self.precision()) {
+                val = Number(val).toFixed(self.precision());
+            }
+
         }
-        self.disposables.push(this.updateVal);
-    };
+        return val || self.value() || null;
+    }, self).extend({throttle: 600});
 
-    return ko.components.register('number-widget', {
-        viewModel: NumberWidget,
-        template: { require: 'text!widget-templates/number' }
-    });
+    if (!this.preview) {
+        this.value(Number(this.updateVal()));
+    }
+
+    this.displayValue = ko.pureComputed(function() {
+        if (self.value() !== null && self.value() !== undefined) {
+            return self.value().toString();
+        }
+    }, self);
+
+    if (ko.isObservable(this.precision)) {
+        var precisionSubscription = this.precision.subscribe(function(val){
+            if (self.value() && val){
+                self.value(Number(self.value()).toFixed(val));
+            }
+        }, self);
+        self.disposables.push(precisionSubscription);
+    }
+    self.disposables.push(this.updateVal);
+};
+
+export default ko.components.register('number-widget', {
+    viewModel: NumberWidget,
+    template: numberWidgetTemplate,
 });

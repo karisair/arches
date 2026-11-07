@@ -1,21 +1,25 @@
-define([
-    'jquery',
-    'underscore',
-    'knockout',
-    'knockout-mapping',
-    'viewmodels/report',
-    'arches',
-    'bindings/chosen'
-], function($, _, ko, koMapping, ReportViewModel, arches) {
-    return function(params) {
-        params.configKeys = ['tabs', 'activeTabIndex'];
-        ReportViewModel.apply(this, [params]);
-        var self = this;
-        if (this.activeTabIndex() > self.tabs().length - 1) {
-            this.activeTabIndex(0);
-        }
-        this.icons = ko.observableArray([]);
+import $ from 'jquery';
+import _ from 'underscore';
+import ko from 'knockout';
+import koMapping from 'knockout-mapping';
+import arches from 'arches';
+import ReportViewModel from 'viewmodels/report';
+import 'bindings/chosen';
 
+
+export default function(params) {
+    var self = this;
+    params.configKeys = ['tabs', 'activeTabIndex'];
+
+    ReportViewModel.apply(this, [params]);
+
+    this.tabpanelId = 'report-tabpanel-' + Math.random().toString(16).slice(2);
+    if (this.activeTabIndex() > self.tabs().length - 1) {
+        this.activeTabIndex(0);
+    }
+    this.icons = ko.observableArray([]);
+
+    if (!self.summary) {
         $.ajax({
             type: "GET",
             url: arches.urls.icons})
@@ -29,66 +33,66 @@ define([
                     };});
                 self.icons(parsed);
             });
+    }
 
-        this.activeTab = ko.observable(self.tabs()[ko.unwrap(this.activeTabIndex)]);
-        this.report.configJSON.subscribe(function(){
-            if (self.tabs.indexOf(self.activeTab()) === -1) {
-                self.activeTab(self.tabs()[ko.unwrap(this.activeTabIndex)]);
-            }
-        });
-        this.topcards = ko.unwrap(self.report.cards).map(function(card){
-            return {name: card.model.name(), nodegroupid: card.nodegroupid};
-        });
-
-        this.setActiveTab = function(tabIndex){
-            self.activeTabIndex(tabIndex);
+    this.activeTab = ko.observable(self.tabs()[ko.unwrap(this.activeTabIndex)]);
+    this.report.configJSON.subscribe(function(){
+        if (self.tabs.indexOf(self.activeTab()) === -1) {
             self.activeTab(self.tabs()[ko.unwrap(self.activeTabIndex)]);
-        };
+        }
+    });
+    this.topcards = ko.unwrap(self.report.cards).map(function(card){
+        return {name: card.model.name(), nodegroupid: card.nodegroupid};
+    });
 
-        this.activeCards = ko.computed(function() {
-            var cardList = [];
-            ko.unwrap(self.report.cards).forEach(function(card) {
-                if (self.activeTabIndex() !== undefined && self.tabs().length > 0 && self.tabs().length -1 >= self.activeTabIndex()) {
-                    self.tabs()[self.activeTabIndex()]["nodegroup_ids"]().forEach( function(tabNodegroupId) {
-                        if (card.nodegroupid === tabNodegroupId) {
-                            cardList.push(card);
-                        }
-                    });
-                }
-            });
-            return cardList;
-        });
-
-        this.activeTabEmpty = ko.computed(function() {
-            return self.activeCards().reduce(function(count, card) {
-                return count += ko.unwrap(card.tiles).length || 0;
-            }, 0) <= 0;
-        });
-
-        this.moveTab = function(v) {
-            if (v.sourceIndex === self.activeTabIndex()) {
-                self.setActiveTab(v.targetIndex);
-            }
-        };
-
-        this.addTab = function(){
-            var newTab = koMapping.fromJS({
-                icon: '',
-                name: '',
-                "nodegroup_ids": []
-            });
-            this.tabs.unshift(newTab);
-            this.setActiveTab(0);
-        };
-
-        this.removeTab = function(tab){
-            var index;
-            if (this.tabs().length > 0) {
-                index = this.tabs.indexOf(tab) > 0 ? this.tabs.indexOf(tab) - 1 : 0;
-                this.setActiveTab(index);
-                this.tabs.remove(tab);
-            }
-        };
-
+    this.setActiveTab = function(tabIndex){
+        self.activeTabIndex(tabIndex);
+        self.activeTab(self.tabs()[ko.unwrap(self.activeTabIndex)]);
     };
-});
+
+    this.activeCards = ko.computed(function() {
+        var cardList = [];
+        ko.unwrap(self.report.cards).forEach(function(card) {
+            if (self.activeTabIndex() !== undefined && self.tabs().length > 0 && self.tabs().length -1 >= self.activeTabIndex()) {
+                self.tabs()[self.activeTabIndex()]["nodegroup_ids"]().forEach( function(tabNodegroupId) {
+                    if (card.nodegroupid === tabNodegroupId) {
+                        cardList.push(card);
+                    }
+                });
+            }
+        });
+        return cardList;
+    });
+
+    this.activeTabEmpty = ko.computed(function() {
+        return self.activeCards().reduce(function(count, card) {
+            return count += ko.unwrap(card.tiles).length || 0;
+        }, 0) <= 0;
+    });
+
+    this.moveTab = function(v) {
+        if (v.sourceIndex === self.activeTabIndex()) {
+            self.setActiveTab(v.targetIndex);
+        }
+    };
+
+    this.addTab = function(){
+        var newTab = koMapping.fromJS({
+            icon: '',
+            name: '',
+            "nodegroup_ids": []
+        });
+        this.tabs.unshift(newTab);
+        this.setActiveTab(0);
+    };
+
+    this.removeTab = function(tab){
+        var index;
+        if (this.tabs().length > 0) {
+            index = this.tabs.indexOf(tab) > 0 ? this.tabs.indexOf(tab) - 1 : 0;
+            this.setActiveTab(index);
+            this.tabs.remove(tab);
+        }
+    };
+
+};

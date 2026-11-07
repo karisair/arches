@@ -91,10 +91,6 @@
                     <td>{% blocktrans %}Show this Card by default. Developers could hide a card initially, and show it based other variables.{% endblocktrans %}</td>
                 </tr>
                 <tr>
-                    <td>{% trans "Allow Multiple Values" %}</td>
-                    <td>{% blocktrans %}While certain node data types allow the storage of multiple values in a single node, "concept-list" for example, this setting is how you control cardinality at a higher level. When determining whether or not to use this setting, we recommend testing out the resource editor interface directly.{% endblocktrans %}</td>
-                </tr>
-                <tr>
                     <td>{% trans "Enable Card-level Help" %}</td>
                     <td>{% blocktrans %}To aid data entry users when using this Card, you may want to add some extra guidance. Enable setting to do so, and design the content of this guidance with the Card-Level Help menu.{% endblocktrans %}</td>
                 </tr>
@@ -107,9 +103,9 @@
             &nbsp;<i class="ep-help-topic-toggle-icon fa fa-chevron-right"></i>
         </a>
         <div class="ep-help-topic-content">
-            <p>Widgets are data entry helpers for each node that collects information; it's often easier to pick a date from a calendar than to type it in, for example. Generally, the data type of the node will determine which Widget template is used. However, in some cases you will have a choice: For example, in the case of a <code>concept</code> node, you can choose a dropdown menu or a set of radio buttons. Similarly, for a <code>string</code> node you can choose a basic text box or a rich text editor.</p>
-            <p>Depending on the Widget, there are more settings you can configure, most of which are optional and all come with acceptable defaults.</p>
-            <span class="ep-help-table-header">Common Settings</span>
+            <p>{% blocktrans %}Widgets are data entry helpers for each node that collects information; it's often easier to pick a date from a calendar than to type it in, for example. Generally, the data type of the node will determine which Widget template is used. However, in some cases you will have a choice: For example, in the case of a <code>concept</code> node, you can choose a dropdown menu or a set of radio buttons. Similarly, for a <code>string</code> node you can choose a basic text box or a rich text editor.{% endblocktrans %}</p>
+            <p>{% trans "Depending on the Widget, there are more settings you can configure, most of which are optional and all come with acceptable defaults." %}</p>
+            <span class="ep-help-table-header">{% trans "Common Settings" %}</span>
             <table class="ep-help-table">
                 <tr>
                     <td>{% trans "Widget Label" %}</td>
@@ -128,7 +124,7 @@
                     <td>{% blocktrans %}If desired, you can define a default value.{% endblocktrans %}</td>
                 </tr>
             </table>
-            <span class="ep-help-table-header">Other Settings by Widget</span>
+            <span class="ep-help-table-header">{% trans "Other Settings by Widget" %}</span>
             <table class="ep-help-table">
                 <tr>
                     <td>{% trans "map-widget" %}</td>

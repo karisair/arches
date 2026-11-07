@@ -66,6 +66,7 @@ class Command(BaseCommand):
         self.register("plugins", "plugin")
         self.register("reports", "report")
         self.register("datatypes", "datatype")
+        self.register("etl_modules", "etl_module")
 
     def update_project_templates(self):
         """
@@ -74,6 +75,11 @@ class Command(BaseCommand):
         whitelisted into the settings_local.py template
 
         """
-        files = [{"src": "arches/app/templates/index.htm", "dst": "arches/install/arches-templates/project_name/templates/index.htm"}]
+        files = [
+            {
+                "src": "arches/app/templates/index.htm",
+                "dst": "arches/install/arches-templates/project_name/templates/index.htm",
+            }
+        ]
         for f in files:
             shutil.copyfile(f["src"], f["dst"])

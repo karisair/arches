@@ -21,11 +21,15 @@ import urllib.parse
 import urllib.error
 import uuid
 import logging
+import warnings
 from datetime import datetime
-from elasticsearch import Elasticsearch, helpers
+from elasticsearch import Elasticsearch, helpers, ElasticsearchWarning, NotFoundError
 from elasticsearch.exceptions import RequestError
+from elasticsearch.helpers import BulkIndexError
 from arches.app.models.system_settings import settings
 from arches.app.utils.betterJSONSerializer import JSONSerializer, JSONDeserializer
+
+from arches.app.search.mappings import CONCEPTS_INDEX, RESOURCES_INDEX, TERMS_INDEX
 
 
 class SearchEngine(object):
@@ -38,6 +42,102 @@ class SearchEngine(object):
         self.prefix = kwargs.pop("prefix", "").lower()
         self.es = Elasticsearch(serializer=serializer, **kwargs)
         self.logger = logging.getLogger(__name__)
+        warnings.filterwarnings("ignore", category=ElasticsearchWarning)
+        if "cloud_id" in settings.ELASTICSEARCH_CONNECTION_OPTIONS:
+            serializer.utf_encode = True
+
+    def create_snapshot(self, repository, snapshot=None, **kwargs):
+        if snapshot is None:
+            from datetime import datetime
+
+            # input datetime
+            dt = datetime.now()
+            # epoch time
+            epoch_time = datetime(1970, 1, 1)
+
+            # subtract Datetime from epoch datetime
+            delta = dt - epoch_time
+            snapshot = "{}_{}".format(settings.APP_NAME, int(delta.total_seconds()))
+
+        # all indices will be included in the snapshot except concepts - which needs to be
+        # built from scratch because there is no timestamping for concepts
+        indices = self.get_index_names()
+        indices.remove(self._add_prefix(CONCEPTS_INDEX))
+
+        return self.es.snapshot.create(
+            repository=repository,
+            snapshot=snapshot,
+            feature_states=None,
+            include_global_state=False,
+            indices=indices,
+            **kwargs,
+        )
+
+    def get_index_names(self):
+        custom_indexes = [
+            index["name"] for index in settings.ELASTICSEARCH_CUSTOM_INDEXES
+        ]
+
+        raw_indices = [
+            RESOURCES_INDEX,
+            CONCEPTS_INDEX,
+            TERMS_INDEX,
+        ] + custom_indexes
+
+        indices = [self._add_prefix(index) for index in raw_indices]
+        return indices
+
+    def check_snapshot(self, repository, snapshot, **kwargs):
+        try:
+            return (
+                self.es.snapshot.status(
+                    repository=repository, snapshot=snapshot, **kwargs
+                )["snapshots"][0]["state"]
+                == "SUCCESS"
+            )
+        except KeyError:
+            return False
+        except NotFoundError:
+            return False
+
+    def restore_snapshot(self, repository, snapshot, **kwargs):
+        print(
+            self.es.snapshot.restore(
+                repository=repository,
+                snapshot=snapshot,
+                wait_for_completion=True,
+                **kwargs,
+            )
+        )
+
+    def get_snapshot(self, repository_name, snapshot_name, **kwargs):
+        return self.es.snapshot.get(
+            repository=repository_name, snapshot=snapshot_name, **kwargs
+        )
+
+    def restore_status(self):
+        indices = self.get_index_names()
+        indices.remove(self._add_prefix(CONCEPTS_INDEX))
+        index_statuses = self.es.indices.recovery(index=indices)
+        for key in index_statuses.keys():
+            for shard in index_statuses[key]["shards"]:
+                if shard["stage"] != "DONE":
+                    return "in progress"
+        return "done"
+
+    def list_snapshots(self, repository, **kwargs):
+        try:
+            return sorted(
+                [
+                    item["snapshot"]
+                    for item in self.es.snapshot.get(
+                        repository=repository, snapshot="_all", **kwargs
+                    )["snapshots"]
+                ],
+                reverse=True,
+            )
+        except KeyError:
+            return []
 
     def _add_prefix(self, *args, **kwargs):
         if args:
@@ -47,7 +147,11 @@ class SearchEngine(object):
         if index is None or index == "":
             raise NotImplementedError("Elasticsearch index not specified.")
 
-        prefix = "%s_" % self.prefix.strip() if self.prefix and self.prefix.strip() != "" else ""
+        prefix = (
+            "%s_" % self.prefix.strip()
+            if self.prefix and self.prefix.strip() != ""
+            else ""
+        )
         ret = []
         for idx in index.split(","):
             ret.append("%s%s" % (prefix, idx))
@@ -67,16 +171,25 @@ class SearchEngine(object):
         """
 
         kwargs = self._add_prefix(**kwargs)
-        body = kwargs.pop("body", None)
-        if body is not None:
+        query = kwargs.pop("query", None)
+        if query is not None:
             try:
                 data = []
                 refresh = kwargs.pop("refresh", False)
-                for hit in helpers.scan(self.es, query=body, **kwargs):
+                for hit in helpers.scan(self.es, query=query, **kwargs):
                     hit["_op_type"] = "delete"
                     data.append(hit)
 
                 return helpers.bulk(self.es, data, refresh=refresh, **kwargs)
+            except BulkIndexError as detail:
+                if detail.errors[0]["delete"]["status"] == 404:
+                    pass
+                else:
+                    self.logger.warning(
+                        "%s: WARNING: failed to delete document by query: %s \nException detail: %s\n"
+                        % (datetime.now(), query, detail)
+                    )
+                    raise detail
             except Exception as detail:
                 try:
                     # ignore 404 errors (index_not_found_exception)
@@ -84,14 +197,18 @@ class SearchEngine(object):
                         pass
                 except:
                     self.logger.warning(
-                        "%s: WARNING: failed to delete document by query: %s \nException detail: %s\n" % (datetime.now(), body, detail)
+                        "%s: WARNING: failed to delete document by query: %s \nException detail: %s\n"
+                        % (datetime.now(), query, detail)
                     )
                     raise detail
         else:
             try:
-                return self.es.delete(ignore=[404], **kwargs)
+                return self.es.options(ignore_status=404).delete(**kwargs)
             except Exception as detail:
-                self.logger.warning("%s: WARNING: failed to delete document: %s \nException detail: %s\n" % (datetime.now(), body, detail))
+                self.logger.warning(
+                    "%s: WARNING: failed to delete document: %s \nException detail: %s\n"
+                    % (datetime.now(), kwargs, detail)
+                )
                 raise detail
 
     def delete_index(self, **kwargs):
@@ -102,50 +219,62 @@ class SearchEngine(object):
 
         kwargs = self._add_prefix(**kwargs)
         print("deleting index : %s" % kwargs.get("index"))
-        return self.es.indices.delete(ignore=[400, 404], **kwargs)
+        return self.es.options(ignore_status=[400, 404]).indices.delete(**kwargs)
 
     def search(self, **kwargs):
         """
         Search for an item in the index.
-        Pass an index and id to get a specific document
-        Pass a body with a query dsl to perform a search
+        Pass an index and id (or list of ids) to get a specific document(s)
+        Pass a query with a query dsl to perform a search
 
         """
 
         kwargs = self._add_prefix(**kwargs)
-        body = kwargs.get("body", None)
-        id = kwargs.get("id", None)
+        query = kwargs.get("query", None)
+        id = kwargs.pop("id", None)
 
         if id:
+            kwargs = {  # removes bad kwargs for get methods
+                "index": kwargs.get("index"),
+                "source_includes": kwargs.get("source_includes"),
+                "source_excludes": kwargs.get("source_excludes"),
+            }
+            if isinstance(id, str):
+                id = id.split(",")
+                if len(id) == 1:
+                    id = id[0]
             if isinstance(id, list):
-                kwargs.setdefault("body", {"ids": kwargs.pop("id")})
-                return self.es.mget(**kwargs)
+                kwargs["ids"] = id
+                return self.es.mget(**kwargs).body
             else:
-                return self.es.get(**kwargs)
+                kwargs["id"] = id
+                return self.es.get(**kwargs).body
 
         ret = None
         try:
-            ret = self.es.search(**kwargs)
+            ret = self.es.search(**kwargs).body
         except RequestError as detail:
-            self.logger.exception("%s: WARNING: search failed for query: %s \nException detail: %s\n" % (datetime.now(), body, detail))
-
+            self.logger.exception(
+                "%s: WARNING: search failed for query: %s \nException detail: %s\n"
+                % (datetime.now(), query, detail)
+            )
         return ret
 
-    def create_mapping(self, index, fieldname="", fieldtype="string", fieldindex=None, body=None):
+    def create_mapping(
+        self, index, fieldname="", fieldtype="string", fieldindex=None, body=None
+    ):
         """
         Creates an Elasticsearch body for a single field given an index name and type name
 
         """
 
         index = self._add_prefix(index)
-        self.es.indices.create(index=index, ignore=400)
-        self.es.indices.put_mapping(index=index, doc_type="_doc", body=body, include_type_name=True)
-        # print(f"adding mapping to {index} : {body}")
+        self.es.options(ignore_status=400).indices.create(index=index)
+        self.es.indices.put_mapping(index=index, **body)
 
     def create_index(self, **kwargs):
         kwargs = self._add_prefix(**kwargs)
-        kwargs["include_type_name"] = True
-        self.es.indices.create(ignore=400, **kwargs)
+        self.es.options(ignore_status=400).indices.create(**kwargs)
         print("creating index : %s" % kwargs.get("index", ""))
 
     def index_data(self, index=None, body=None, idfield=None, id=None, **kwargs):
@@ -171,10 +300,11 @@ class SearchEngine(object):
                     id = getattr(document, idfield)
 
             try:
-                self.es.index(index=index, doc_type="_doc", body=document, id=id)
+                self.es.index(index=index, document=document, id=id)
             except Exception as detail:
                 self.logger.warning(
-                    "%s: WARNING: failed to index document: %s \nException detail: %s\n" % (datetime.now(), document, detail)
+                    "%s: WARNING: failed to index document: %s \nException detail: %s\n"
+                    % (datetime.now(), document, detail)
                 )
                 raise detail
 
@@ -182,21 +312,32 @@ class SearchEngine(object):
         try:
             helpers.bulk(self.es, data, **kwargs)
         except Exception as detail:
-            self.logger.warning("%s: WARNING: failed to bulk index documents, \nException detail: %s\n" % (datetime.now(), detail))
+            self.logger.warning(
+                "%s: WARNING: failed to bulk index documents, \nException detail: %s\n"
+                % (datetime.now(), detail)
+            )
 
     def create_bulk_item(self, op_type="index", index=None, id=None, data=None):
-        return {"_op_type": op_type, "_index": self._add_prefix(index), "_type": "_doc", "_id": id, "_source": data}
+        return {
+            "_op_type": op_type,
+            "_index": self._add_prefix(index),
+            "_id": id,
+            "_source": data,
+        }
 
     def count(self, **kwargs):
         kwargs = self._add_prefix(**kwargs)
-        kwargs["doc_type"] = kwargs.pop("doc_type", "_doc")
-        body = kwargs.pop("body", None)
+        query = kwargs.pop("query", None)
 
-        # need to only pass in the query key as other keys (eg: _source) are not allowed
-        if body:
-            query = body.pop("query", None)
-            if query:
-                kwargs["body"] = {"query": query}
+        # need to only pass in the query and index keys
+        # as other keys (eg: _source) are not allowed
+        if query:
+            index = None
+            if "index" in kwargs:
+                index = kwargs["index"]
+            kwargs = {"query": query}
+            if index:
+                kwargs["index"] = index
 
         count = self.es.count(**kwargs)
         if count is not None:
@@ -204,15 +345,28 @@ class SearchEngine(object):
         else:
             return None
 
+    def refresh(self, **kwargs):
+        kwargs = self._add_prefix(**kwargs)
+        self.es.indices.refresh(**kwargs)
+
     def BulkIndexer(outer_self, batch_size=500, **kwargs):
         class _BulkIndexer(object):
             def __init__(self, **kwargs):
                 self.queue = []
                 self.batch_size = kwargs.pop("batch_size", 500)
+                kwargs.pop("maxsize", "")
+                kwargs.pop("timeout", "")
+                kwargs.pop("retry_on_timeout", "")
+                kwargs.pop("max_retries", "")
                 self.kwargs = kwargs
 
             def add(self, op_type="index", index=None, id=None, data=None):
-                doc = {"_op_type": op_type, "_index": outer_self._add_prefix(index), "_type": "_doc", "_id": id, "_source": data}
+                doc = {
+                    "_op_type": op_type,
+                    "_index": outer_self._add_prefix(index),
+                    "_id": id,
+                    "_source": data,
+                }
                 self.queue.append(doc)
 
                 if len(self.queue) >= self.batch_size:

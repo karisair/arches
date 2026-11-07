@@ -1,273 +1,241 @@
-define([
-    'jquery',
-    'underscore',
-    'knockout',
-    'd3'
-], function($, _, ko, d3) {
-    var width = 300;
-    var height = 300;
-    ko.bindingHandlers.timeWheel = {
-        init: function(element, valueAccessor, allBindings, viewModel, bindingContext) {
-            var radius = Math.min(width, height) / 2;
-            var $el = $(element);
+import $ from 'jquery';
+import _ from 'underscore';
+import ko from 'knockout';
+import arches from 'arches';
+import * as d3 from 'd3';
 
-            var vis = d3.select($el.find('.chart')[0]).append("svg")
-                .attr("preserveAspectRatio", "xMinYMin meet")
-                .attr("viewBox", "0 0 " + width + " " + height)
-                .classed("svg-content", true)
-                .append("g")
-                .attr("class", "container")
-                .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")");
+var width = 300;
+var height = 300;
+var radius = Math.min(width, height) / 8;
 
-            vis.append("svg:circle")
-                .attr("r", "0")
-                .style("opacity", 0);
+ko.bindingHandlers.timeWheel = {
+    init: function (element, valueAccessor, allBindings, viewModel, bindingContext) {
+        var $el = $(element);
 
-            ko.utils.domData.set(element, 'vis', vis);
-        },
+        var g = d3.select($el.find('.chart')[0]).append("svg")
+            .attr("preserveAspectRatio", "xMinYMin meet")
+            .attr("viewBox", [0, 0, width, height])
+            .classed("svg-content", true)
+            .append("g")
+            .attr("class", "container")
+            .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")");
 
-        update: function(element, valueAccessor, allBindings, viewModel, bindingContext) {
-            var radius = Math.min(width, height) / 2;
-            var colortheme = d3.scale.category20c();
-            var x = d3.scale.linear()
-                .range([0, 2 * Math.PI]);
-            var y = d3.scale.sqrt()
-                .range([0, radius]);
-            var $el = $(element);
-            var opts = ko.unwrap(valueAccessor());
-            var configJSON = opts.config();
-            var breadCrumb = opts.breadCrumb;
-            var selectedPeriod = opts.selectedPeriod;
-            var total = 0;
-            var data = null;
+        ko.utils.domData.set(element, 'vis', g);
+    },
 
-            // Breadcrumb dimensions: width, height, spacing, width of tip/tail.
-            var b = {
-                w: 100,
-                h: 30,
-                s: 3,
-                t: 10
-            };
+    update: function (element, valueAccessor, allBindings, viewModel, bindingContext) {
+        // see https://observablehq.com/@d3/zoomable-sunburst for the example that informed much of this code
+        // also see http://bl.ocks.org/ropeladder/83915942ac42f17c087a82001418f2ee for the click/dblclick code
 
-            var vis = ko.utils.domData.get(element, 'vis');
-            vis.on("mouseleave", function () {
-                var d = selectedPeriod();
-                if (d) {
-                    highlightPeriod(d);
-                } else {
-                    clearHighlight();
-                }
-            });
+        var colortheme = d3.scaleOrdinal(d3.schemeCategory10);
+        var $el = $(element);
+        var opts = ko.unwrap(valueAccessor());
+        var configJSON = opts.config();
+        var breadCrumb = opts.breadCrumb;
+        var selectedPeriod = opts.selectedPeriod;
+        var total = 0;
+        var depth = 0;
 
-            var partition = d3.layout.partition()
-                .sort(function(d, e) {
+        // Breadcrumb dimensions: width, height, spacing, width of tip/tail.
+        var b = {
+            w: 100,
+            h: 30,
+            s: 3,
+            t: 10
+        };
+
+        selectedPeriod.subscribe(function (d) {
+            if (!d) {
+                clearHighlight();
+            }
+        });
+
+        var g = ko.utils.domData.get(element, 'vis');
+        g.on("mouseleave", function (event) {
+            var d = selectedPeriod();
+            if (d) {
+                highlightPeriod(event, d);
+            } else {
+                clearHighlight();
+            }
+        });
+
+        var partition = function (data) {
+            var root = d3.hierarchy(data)
+                .sort(function (d, e) {
                     return d.start - e.start;
                 })
-                .value(function(d) {
-                    return d.size;
+                .sum(function (d) {
+                    // we only want leaf nodes to specify a size
+                    // otherwise the sunburst chart will be sparcely populated
+                    return d.children.length > 0 ? 0 : d.size;
                 });
+            depth = root.height + 1;
+            return d3.partition()
+                .size([2 * Math.PI, root.height + 1])(root);
+        };
 
-            if (configJSON) {
-                data = partition.nodes(configJSON);
-                total = _.find(data, function(d) {
-                    return d.name === 'root';
-                }).value;
-                breadCrumb(total + ' date values');
+        var d3ClickManager = function () {
+            // we want to a distinguish single/double click
+            // details http://bl.ocks.org/couchand/6394506
+            var dispatcher = d3.dispatch('click', 'dblclick');
+            function cc(selection) {
+                var down, tolerance = 5, last, wait = null, args;
+                // euclidean distance
+                function dist(a, b) {
+                    return Math.sqrt(Math.pow(a[0] - b[0], 2), Math.pow(a[1] - b[1], 2));
+                }
+                selection.on('mousedown', function (event) {
+                    down = d3.pointer(event);
+                    last = +new Date();
+                    args = arguments;
+                });
+                selection.on('mouseup', function (event) {
+                    if (dist(down, d3.pointer(event)) > tolerance) {
+                        return;
+                    } else {
+                        if (wait) {
+                            window.clearTimeout(wait);
+                            wait = null;
+                            dispatcher.apply("dblclick", this, args);
+                        } else {
+                            wait = window.setTimeout((function () {
+                                return function () {
+                                    dispatcher.apply("click", this, args);
+                                    wait = null;
+                                };
+                            })(), 300);
+                        }
+                    }
+                });
             }
-
-            var arc = d3.svg.arc()
-                .startAngle(function(d) {
-                    return Math.max(0, Math.min(2 * Math.PI, x(d.x)));
-                })
-                .endAngle(function(d) {
-                    return Math.max(0, Math.min(2 * Math.PI, x(d.x + d.dx)));
-                })
-                .innerRadius(function(d) {
-                    return Math.max(0, y(d.y));
-                })
-                .outerRadius(function(d) {
-                    return Math.max(0, y(d.y + d.dy));
-                });
-
-
-            var arcTween = function(d) {
-                var xd = d3.interpolate(x.domain(), [d.x, d.x + d.dx]),
-                    yd = d3.interpolate(y.domain(), [d.y, 1]),
-                    yr = d3.interpolate(y.range(), [d.y ? 20 : 0, radius]);
-                return function(d, i) {
-                    return i ?
-                        function(t) {
-                            return arc(d);
-                        } :
-                        function(t) {
-                            x.domain(xd(t));
-                            y.domain(yd(t)).range(yr(t));
-                            return arc(d);
-                        };
-                };
+            // Copies a variable number of methods from source to target.
+            var d3rebind = function (target, source) {
+                var i = 1, n = arguments.length, method;
+                while (++i < n) target[method = arguments[i]] = d3_rebind(target, source, source[method]);
+                return target;
             };
 
-            function clickcancel() {
-                // we want to a distinguish single/double click
-                // details http://bl.ocks.org/couchand/6394506
-                var event = d3.dispatch('click', 'dblclick');
-                function cc(selection) {
-                    var down, tolerance = 5, last, wait = null, args;
-                    // euclidean distance
-                    function dist(a, b) {
-                        return Math.sqrt(Math.pow(a[0] - b[0], 2), Math.pow(a[1] - b[1], 2));
-                    }
-                    selection.on('mousedown', function() {
-                        down = d3.mouse(document.body);
-                        last = +new Date();
-                        args = arguments;
-                    });
-                    selection.on('mouseup', function() {
-                        if (dist(down, d3.mouse(document.body)) > tolerance) {
-                            return;
-                        } else {
-                            if (wait) {
-                                window.clearTimeout(wait);
-                                wait = null;
-                                event.dblclick.apply(this, args);
-                            } else {
-                                wait = window.setTimeout((function() {
-                                    return function() {
-                                        event.click.apply(this, args);
-                                        wait = null;
-                                    };
-                                })(), 300);
-                            }
-                        }
-                    });
+            // Method is assumed to be a standard D3 getter-setter:
+            // If passed with no arguments, gets the value.
+            // If passed with arguments, sets the value and returns the target.
+            function d3_rebind(target, source, method) {
+                return function () {
+                    var value = method.apply(source, arguments);
+                    return value === source ? target : value;
                 };
-                return d3.rebind(cc, event, 'on');
             }
-            var cc = clickcancel();
+            return d3rebind(cc, dispatcher, 'on');
+        };
+        var clickmanager = d3ClickManager();
+        clickmanager.on("click", function (event, d) {
+            selectedPeriod(d);
+        });
 
-            var updateChart = function (data) {
-                // DATA JOIN - Join new data with old elements, if any.
-                var gs = vis.selectAll("g").data(data);
-
-                // ENTER
-                var g = gs.enter()
-                    .append("g")
-                    .on("mouseover", highlightPeriod)
-                    .call(cc);
-
-                // click and dblclick step on each other so we need this
-                cc.on("click", function(d) {
-                    selectedPeriod(d);
-                })
-                .on("dblclick", dblclick)
-
-                // UPDATE
-                var path = g.append("path");
-
-                gs.select('path')
-                    .style("fill", function(d) {
-                        return colortheme((d.children ? d : d.parent).name);
-                    })
-                    .each(function(d) {
-                      this.x0 = d.x;
-                      this.dx0 = d.dx;
-                    })
-                    .transition().duration(500)
-                    .attr("d", arc);
-
-
-                // EXIT - Remove old elements as needed.
-                gs.exit().transition().duration(500).style("fill-opacity", 1e-6).remove();
-
+        function highlightPeriod(event, d) {
+            let count = d.data.size;
+            if (d.data.size < 1) {
+                count = "< 1";
             }
 
-            function dblclick(d) {
-                // console.log(d)
-                // fade out all text elements
-                if (d.size !== undefined) {
-                  d.size += 100;
-                };
+            d3.select($el.find('.count')[0])
+                .text(count);
 
-                vis.selectAll('path').transition()
-                  .duration(750)
-                  .attrTween("d", arcTween(d))
-                  .each("end", function(e, i) {
-                      // check if the animated element's data e lies within the visible angle span given in d
-                      if (e.x >= d.x && e.x < (d.x + d.dx)) {
-                          // get a selection of the associated text element
-                          var arcText = d3.select(this.parentNode).select("text");
-                          // fade in the text element and recalculate positions
-                          arcText.transition().duration(750)
-                              .attr("opacity", 1)
-                              .attr("transform", function() {
-                                  return "rotate(" + computeTextRotation(e) + ")"
-                              })
-                              .attr("x", function(d) {
-                                  return y(d.y);
-                              });
-                      }
-                });
+            var sequenceArray = [];
+            var current = d;
+            while (current.parent) {
+                sequenceArray.unshift(current.data.name);
+                current = current.parent;
             }
 
-            function highlightPeriod(d) {
-                count = d.size;
-                if (d.size < 1) {
-                    count = "< 1";
-                }
+            sequenceArray.push(count + ' hits');
 
-                d3.select($el.find('.count')[0])
-                    .text(count);
+            breadCrumb(sequenceArray.join(' - '));
 
-                var sequenceArray = [];
-                var current = d;
-                while (current.parent) {
-                    sequenceArray.unshift(current.name);
-                    current = current.parent;
-                }
+            // Fade all the segments.
+            d3.selectAll("path")
+                .style("opacity", 0.3);
 
-                sequenceArray.push(count + ' hits')
-
-                breadCrumb(sequenceArray.join(' - '));
-
-                // Fade all the segments.
-                d3.selectAll("path")
-                    .style("opacity", 0.3);
-
-                // Then highlight only those that are an ancestor of the current segment.
-                vis.selectAll("path")
-                    .filter(function(node) {
-                        return (sequenceArray.indexOf(node.name) >= 0);
-                    })
-                    .style("opacity", 1);
-            }
-
-            function clearHighlight(){
-                // Deactivate all segments during transition.
-                d3.selectAll("path").on("mouseover", null);
-
-                // Transition each segment to full opacity and then reactivate it.
-                d3.selectAll("path")
-                    .transition()
-                    .duration(1000)
-                    .style("opacity", 1)
-                    .each("end", function() {
-                        d3.select(this).on("mouseover", highlightPeriod);
-                    });
-
-                breadCrumb(total + ' date values')
-            }
-
-            selectedPeriod.subscribe(function(d) {
-                if (!d) {
-                    clearHighlight();
-                }
+            // Then highlight only those that are an ancestor of the current segment.
+            path.filter(function (d) {
+                return (sequenceArray.indexOf(d.data.name) >= 0);
             })
+                .style("opacity", 1);
+        }
 
-            if(data){
-                updateChart(data);
+        function clearHighlight() {
+            d3.selectAll("path")
+                .style("opacity", 1);
+            breadCrumb(arches.translations.timeWheelDateMatches.replace("${total}", total));
+        }
+
+        selectedPeriod.subscribe(function (d) {
+            if (!d) {
+                clearHighlight();
+            }
+        });
+
+        if (!!configJSON) {
+            var root = partition(configJSON);
+            total = configJSON.size;
+            breadCrumb(arches.translations.timeWheelDateMatches.replace("${total}", total));
+
+            root.each(function (d) {
+                d.current = d;
+            });
+
+            var arc = d3.arc()
+                .startAngle(function (d) {
+                    return d.x0;
+                })
+                .endAngle(function (d) {
+                    return d.x1;
+                })
+                .padAngle(function (d) {
+                    return Math.min((d.x1 - d.x0) / 2, 0.005);
+                })
+                .padRadius(radius * 1.5)
+                .innerRadius(function (d) {
+                    return d.y0 * radius;
+                })
+                .outerRadius(function (d) {
+                    return Math.max(d.y0 * radius, d.y1 * radius - 1);
+                });
+
+            var path = g.append("g")
+                .selectAll("path")
+                .data(root.descendants().slice(1))
+                .join("path")
+                .attr("fill", d => { while (d.depth > 1) d = d.parent; return colortheme(d.data.name); })
+                .attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.6 : 0.4) : 0)
+                .attr("d", d => arc(d.current))
+                .on("mouseover", highlightPeriod)
+                .call(clickmanager);
+
+            path.filter(d => d.children)
+                .style("cursor", "pointer");
+
+            var format = d3.format(",d");
+
+            path.append("title")
+                .text(d => `${d.ancestors().map(d => d.data.name).reverse().join("/")}\n${format(d.value)}`);
+
+            var parent = g.append("circle")
+                .datum(root)
+                .attr("r", radius)
+                .attr("fill", "none")
+                .attr("pointer-events", "all")
+                .call(clickmanager);
+
+            function arcVisible(d) {
+                return d.y1 <= depth && d.y0 >= 1 && d.x1 > d.x0;
             }
 
         }
+
     }
-    return ko.bindingHandlers.timeWheel;
-});
+};
+ko.bindingHandlers.timeWheel.init = ko.bindingHandlers.timeWheel.init.bind(ko.bindingHandlers.timeWheel);
+ko.bindingHandlers.timeWheel.update = ko.bindingHandlers.timeWheel.update.bind(ko.bindingHandlers.timeWheel);
+
+export default ko.bindingHandlers.timeWheel;

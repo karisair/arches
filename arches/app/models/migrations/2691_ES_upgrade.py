@@ -3,21 +3,16 @@
 
 
 from django.db import migrations
-from arches.app.models.system_settings import settings
-from arches.app.search.search_engine_factory import SearchEngineFactory
-from arches.app.search.mappings import prepare_terms_index, \
-    prepare_concepts_index, prepare_search_index, prepare_resource_relations_index
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('models', '4658_adds_nodevalue_type_widget_config'),
+        ("models", "4658_adds_nodevalue_type_widget_config"),
     ]
 
     def forwards_func(apps, schema_editor):
         pass
-
 
     def reverse_func(apps, schema_editor):
         pass

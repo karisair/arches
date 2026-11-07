@@ -16,15 +16,25 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
+import logging
+
 from django import forms
-from django.contrib.auth.forms import UserCreationForm, PasswordResetForm, SetPasswordForm
+from django.contrib.auth.forms import (
+    UserCreationForm,
+    PasswordResetForm,
+    SetPasswordForm,
+    UserChangeForm,
+)
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.forms.widgets import PasswordInput, TextInput
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from arches.app.models import models
-from captcha.fields import ReCaptchaField
-import logging
+
+# Allow arches apps to depend on django_recaptcha (Django 5.2) or captcha (Django 4.2)
+try:
+    from django_recaptcha.fields import ReCaptchaField
+except ImportError:
+    from captcha.fields import ReCaptchaField
 
 
 class ArchesUserCreationForm(UserCreationForm):
@@ -42,7 +52,7 @@ class ArchesUserCreationForm(UserCreationForm):
                 self.fields["captcha"] = ReCaptchaField(attrs)
             except Exception as e:
                 logger = logging.getLogger(__name__)
-                logger.warn(e)
+                logger.warning(e)
 
     first_name = forms.CharField()
     last_name = forms.CharField()
@@ -56,12 +66,12 @@ class ArchesUserCreationForm(UserCreationForm):
     def clean(self):
         cleaned_data = super(ArchesUserCreationForm, self).clean()
         if "email" in cleaned_data:
-            if User.objects.filter(email=cleaned_data["email"]).count() > 0:
+            if User.objects.filter(email=cleaned_data["email"]).exists():
                 self.add_error(
                     "email",
                     forms.ValidationError(
                         _(
-                            "This email address has already been regisitered with the system. \
+                            "This email address has already been registered with the system. \
                             If you forgot your password, click the 'exit' link below and go to the login page to reset your password."
                         ),
                         code="unique",
@@ -69,7 +79,7 @@ class ArchesUserCreationForm(UserCreationForm):
                 )
 
 
-class ArchesUserProfileForm(ArchesUserCreationForm):
+class ArchesUserProfileForm(UserChangeForm):
     """
     A form that creates a user, with no privileges, from the given username and
     password.
@@ -97,7 +107,7 @@ class ArchesUserProfileForm(ArchesUserCreationForm):
             user.first_name = self.cleaned_data["first_name"]
             user.last_name = self.cleaned_data["last_name"]
             user.email = self.cleaned_data["email"]
-            if models.UserProfile.objects.filter(user=user).count() == 0:
+            if not models.UserProfile.objects.filter(user=user).exists():
                 models.UserProfile.objects.create(user=user)
             user.userprofile.phone = self.cleaned_data["phone"]
             user.userprofile.save()
@@ -106,11 +116,27 @@ class ArchesUserProfileForm(ArchesUserCreationForm):
 
 
 class ArchesPasswordResetForm(PasswordResetForm):
-    email = forms.CharField(widget=forms.EmailInput(attrs={"placeholder": "Email", "class": "form-control input-lg"}))
+    email = forms.CharField(
+        widget=forms.EmailInput(
+            attrs={
+                "class": "form-control input-lg floating-label-input",
+                "required": "required",
+            }
+        )
+    )
 
 
 class ArchesSetPasswordForm(SetPasswordForm):
-    new_password1 = forms.CharField(widget=forms.PasswordInput(attrs={"placeholder": _("New password"), "class": "form-control input-lg"}))
+    new_password1 = forms.CharField(
+        widget=forms.PasswordInput(
+            attrs={"placeholder": _("New password"), "class": "form-control input-lg"}
+        )
+    )
     new_password2 = forms.CharField(
-        widget=forms.PasswordInput(attrs={"placeholder": _("Re-enter new password"), "class": "form-control input-lg"})
+        widget=forms.PasswordInput(
+            attrs={
+                "placeholder": _("Re-enter new password"),
+                "class": "form-control input-lg",
+            }
+        )
     )

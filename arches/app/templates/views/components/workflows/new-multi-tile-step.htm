@@ -1,3 +1,5 @@
+{% load i18n %}
+
 <!-- ko let: { self: $data } -->
     <!-- ko if: !loading() -->
     <div data-bind="" class="wf-multi-tile-step-container">
@@ -15,10 +17,14 @@
                     pageVm: $root
                 }
             }"></div>
-            <button class="btn btn-shim btn-labeled btn-lg fa fa-caret-right btn-mint wf-multi-tile-btn-complete" data-bind="click: function(){complete(true)}">Continue</button>
+            <button class="btn btn-shim btn-labeled btn-lg fa fa-caret-right btn-mint wf-multi-tile-btn-complete" data-bind="click: function(){complete(true)}">
+                <span data-bind="text: $root.translations.continue"></span>
+            </button>
         </div>
         <div class="wf-multi-tile-step-list">
-            <div><h4 data-bind="text: (itemName())"></h4></div>
+            <div class="wf-multi-tile-step-list-container">
+                <h4 data-bind="text: (itemName())"></h4>
+            </div>
             <!-- ko if: card().tiles().length === 0 -->
             <div class="wf-multi-tile-step-list-empty">
                 <p data-bind="text: ('No '+itemName()+' added yet. Add one or multiple '+itemName()+'.')"></p>
@@ -44,8 +50,28 @@
                     </div>
                 </div>
                 <div class="wf-multi-tile-step-card-controls">
-                    <span><i class="fa fa-times-circle"></i></span><span class="" data-bind="click: function(){$parent.remove(tile)}">Remove</span>
-                    <span><i class="fa fa-pencil"></i></span><span data-bind="click: function(){$parent.edit(tile);}">Edit</span>
+                    <span>
+                        <i class="fa fa-times-circle"></i>
+                    </span>
+
+                    <span
+                        class="" 
+                        data-bind="
+                            text: $root.translations.remove,
+                            click: function(){$parent.remove(tile)}
+                        "
+                    ></span>
+
+                    <span>
+                        <i class="fa fa-pencil"></i>
+                    </span>
+                    
+                    <span 
+                        data-bind="
+                            text: $root.translations.edit, 
+                            click: function(){$parent.edit(tile);}
+                        "
+                    ></span>
                 </div>
             </div>
             <!-- /ko -->

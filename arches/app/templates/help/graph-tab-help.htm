@@ -16,13 +16,24 @@
             <p>{% blocktrans %}Once you've finished creating this Resource Model or Branch make sure to set its status to "active".{% endblocktrans %}</p>
         </div>
     </div>
+    <div> 
+        <a href="javascript:void(0)" class="ep-help-topic-toggle"> 
+            <h4>{% trans "Draft Graphs" %}</h4> 
+            &nbsp;<i class="ep-help-topic-toggle-icon fa fa-chevron-right"></i> 
+        </a> 
+        <div class="ep-help-topic-content"> 
+            <p>{% blocktrans %}After a graph is published, editing is restricted to safeguard any resources that rely on its current structure. In this state, you cannot add or remove nodes, adjust node settings, or modify the graph tree unless you first create a draft.{% endblocktrans %}</p>
+            <p>{% blocktrans %}To make changes, choose <strong>Draft a Model Update</strong> from the <strong>Manage…</strong> menu. This creates a separate working copy of the published graph where you can freely edit the graph. While you refine the draft, all existing resources and queries continue to use the published version—so there's no disruption to ongoing processes.{% endblocktrans %}</p>
+            <p>{% blocktrans %}Once you've completed and tested your updates in the draft, publish it to replace the current graph. After the draft becomes the current graph, you may choose to migrate resources that pointed to the previous version so they now reference the latest publication. This will ensure all dependent data and queries stay aligned with the updated graph definition.{% endblocktrans %}</p>
+        </div> 
+    </div>
     <div>
         <a href="javascript:void(0)" class="ep-help-topic-toggle">
             <h4>{% trans "Top-Level Settings" %}</h4>
             &nbsp;<i class="ep-help-topic-toggle-icon fa fa-chevron-right"></i>
         </a>
         <div class="ep-help-topic-content">
-            <span class="ep-help-table-header">Identifiers</span>
+            <span class="ep-help-table-header">{% trans "Identifiers" %}</span>
             <table class="ep-help-table">
                 <tr>
                     <td>{% trans "Name" %}</td>
@@ -41,7 +52,7 @@
                     <td>{% blocktrans %}This setting is only necessary if an "Ontology" has been chosen. Define the ontology class of the root node for this graph.{% endblocktrans %}</td>
                 </tr>
             </table>
-            <span class="ep-help-table-header">Configuration</span>
+            <span class="ep-help-table-header">{% trans "Configuration" %}</span>
             <table class="ep-help-table">
                 <tr>
                     <td>{% trans "Status" %}</td>
@@ -60,7 +71,7 @@
                 </tr>
                 {% endif %}
             </table>
-            <span class="ep-help-table-header">Description</span>
+            <span class="ep-help-table-header">{% trans "Description" %}</span>
             <table class="ep-help-table">
                 <tr>
                     <td>{% trans "Author" %}</td>
@@ -77,7 +88,7 @@
                 </tr>
                 {% endif %}
             </table>
-            <span class="ep-help-table-header">Appearance</span>
+            <span class="ep-help-table-header">{% trans "Appearance" %}</span>
             <table class="ep-help-table">
                 {% if graph.isresource %}
                 <tr>
@@ -102,19 +113,6 @@
             <p>{% blocktrans %}Use the graph tree on the left side of the page to construct the graph. Every new graph starts with a <strong>Top Node</strong>, which will take the name of the new Resource Model or Branch. From this node, you can either <strong>Add Child Node</strong> to add a single node, or <strong>Add Branch</strong> to add an entire existing Branch.{% endblocktrans %}</p>
             <p>{% blocktrans %}At any point during construction you can switch from <strong>Design</strong> mode to <strong>Preview</strong> to see the full shape of your graph.{% endblocktrans %}</p>
             <p>{% blocktrans %}If you have created a branch structure in a Resource Model that you would like to use in a different Resource Model, you can export it from the graph tree.{% endblocktrans %}</p>
-            <!-- NEED TO UPDATE THE GIF BELOW
-            <div class="col-xs-6">
-                <p><a href="{{ STATIC_URL }}img/help/node-manager.png" target="_blank"><img src="{{ STATIC_URL }}img/help/node-manager.png" style="border: 2px solid #eee"></img></a></p>
-            </div>
-            <p>
-				<a href="javascript:void(0)" class="ep-help-topic-toggle">{% trans "add a node and branch to new graph - click to view" %}</a>
-				<span class="ep-help-img-link">
-					<a href="{{ STATIC_URL }}img/help/add-node-to-branch.gif" target="_blank">{% trans "open in new tab" %}&nbsp;&nbsp;<i class="fa fa-external-link-square" aria-hidden="true"></i>
-					</a>
-				</span>
-				<img class="reloadable-img ep-help-topic-content" src="{{ STATIC_URL }}img/help/add-node-to-branch.gif"></img>
-			</p>
-            -->
         </div>
     </div>
     <div>
@@ -123,7 +121,7 @@
             &nbsp;<i class="ep-help-topic-toggle-icon fa fa-chevron-right"></i>
         </a>
         <div class="ep-help-topic-content">
-            <span class="ep-help-table-header">Node Identifiers</span>
+            <span class="ep-help-table-header">{% trans "Node Identifiers" %}</span>
             <table class="ep-help-table">
                 <tr>
                     <td>{% trans "Node Name" %}</td>
@@ -138,8 +136,8 @@
                     <td>{% blocktrans %}Define what relationship this node has with its parent node (the one directly above it in the graph tree). A verbalization of your choice is shown in the <strong>Semantics</strong> section below this setting.{% endblocktrans %}</td>
                 </tr>
             </table>
-            <span class="ep-help-table-header">Node Data Type and Settings</span>
-            <p>Depending on which data type you choose, you may have many more settings to fill out. Those listed below will be present for every node no matter the data type.</p>
+            <span class="ep-help-table-header">{% trans "Node Data Type and Settings" %}</span>
+            <p>{% blocktrans %}Depending on which data type you choose, you may have many more settings to fill out. Those listed below will be present for every node no matter the data type.{% endblocktrans %}</p>
             <table class="ep-help-table">
                 <tr>
                     <td>{% trans "Data type" %}</td>
@@ -157,6 +155,10 @@
                     <td>{% trans "Place node(s) in a separate card" %}</td>
                     <td><em>{% blocktrans%}only present if this node is not already the top node for a card{% endblocktrans %}</em><br>{% blocktrans %}If true this node will be set in a different card from its parent. This affects data entry, and you are encouraged to test both states of this setting while building you graph. Once data is collected for this node, this setting cannot be changed.{% endblocktrans %}</td>
                 </tr>
+                <tr>
+                    <td>{% trans "Allow Multiple Values" %}</td>
+                    <td>{% blocktrans %}While certain node data types allow the storage of multiple values in a single node, "concept-list" for example, this setting is how you control cardinality at a higher level. When determining whether or not to use this setting, we recommend testing out the resource editor interface directly.{% endblocktrans %}</td>
+                </tr>
             </table>
         </div>
     </div>
@@ -167,7 +169,7 @@
         </a>
         <div class="ep-help-topic-content">
             <p>{% trans "The data type of a node determines what kind of data that node will store. Once chosen, some data types will require further configuration." %}</p>
-            <p>Developers can <a href="https://arches.readthedocs.io/en/stable/functions-widgets-datatypes/#datatypes" target="_blank">create new datatypes</a>.</p>
+            <p>{% blocktrans %}Developers can <a href="https://arches.readthedocs.io/en/stable/functions-widgets-datatypes/#datatypes" target="_blank">create new datatypes</a>.{% endblocktrans %}</p>
             <table class="ep-help-table">
                 <tr>
                     <td>{% trans "boolean" %}</td>

@@ -1,84 +1,86 @@
 import arches
-import json
+
 import os
-import subprocess
-import urllib.request, urllib.parse, urllib.error
-from arches.management.commands import utils
-from arches.app.models import models
+import shutil
+
+from django.core import management
+from django.core.management.base import BaseCommand
 from arches.app.models.system_settings import settings
-from django.core.management.base import BaseCommand, CommandError
+
+from arches.app.models.system_settings import settings
 
 
-class Command(BaseCommand):
+class Command(BaseCommand):  # pragma: no cover
     """
-    Commands for managing Arches functions
+    Command for migrating projects between versions
 
     """
-
-    def add_arguments(self, parser):
-        parser.add_argument("operation", nargs="?", help="operation 'livereload' starts livereload for this project on port 35729")
 
     def handle(self, *args, **options):
-        if arches.__version__ == "4.2":
-            self.update_yarn_depenencies("4.2.x")
+        answer = input(
+            "This operation will upgrade your project to version 8.1\n"
+            "This will replace the following files in your project:\n"
+            "  - .github/dependabot.yml\n"
+            "  - eslint.config.mjs\n"
+            "This will also delete your project's entire webpack/ directory and recreate it "
+            "from scratch, including:\n"
+            "  - webpack/webpack-utils/build-filepath-lookup.js\n"
+            "  - webpack/webpack-utils/patch-vue-compiler-sfc-type-resolution.js\n"
+            "  - webpack/webpack.common.js\n"
+            "  - webpack/webpack.config.dev.js\n"
+            "  - webpack/webpack.config.prod.js\n"
+            "Any other files you've added under webpack/ will be lost.\n"
+            "Continue? "
+        )
 
-        if arches.__version__ == "4.3":
-            self.update_yarn_depenencies("4.3.x")
-
-    def overwite_existing_file(self, path, message):
-        write_file = False
-        if os.path.exists(path) is True:
-            if not utils.get_yn_input(message):
-                return write_file
-            else:
-                write_file = True
+        if answer.lower() in ["y", "yes"]:
+            self.update_to_v8_1()
         else:
-            write_file = True
-        return write_file
+            self.stdout.write("Operation aborted.")
 
-    def update_yarn_depenencies(self, version):
-        packages_path = os.path.join(settings.APP_ROOT, "package.json")
-        yarn_config_path = os.path.join(settings.APP_ROOT, ".yarnrc")
+    def update_to_v8_1(self):
+        self.stdout.write("Updating project to version 8.1...")
 
-        if (
-            self.overwite_existing_file(
-                yarn_config_path,
-                "A .yarnrc file already exists. \
-                Would you like to overwrite it with the latest? \
-                If you have not manually modified this file since creating this project, \
-                the answer is probably 'yes'",
+        # Replaces eslint.config.mjs
+        self.stdout.write("Updating eslint.config.mjs...")
+
+        if os.path.exists(os.path.join(settings.APP_ROOT, "..", "eslint.config.mjs")):
+            os.remove(os.path.join(settings.APP_ROOT, "..", "eslint.config.mjs"))
+
+        shutil.copy2(
+            os.path.join(
+                settings.ROOT_DIR, "install", "arches-templates", "eslint.config.mjs"
+            ),
+            os.path.join(settings.APP_ROOT, "..", "eslint.config.mjs"),
+        )
+        self.stdout.write("Done!")
+
+        # Adds .github/dependabot.yml
+        self.stdout.write("Copying .github/dependabot.yml to project...")
+        shutil.copy(
+            os.path.join(
+                settings.ROOT_DIR,
+                "install",
+                "arches-templates",
+                ".github",
+                "dependabot.yml",
+            ),
+            os.path.join(settings.APP_ROOT, "..", ".github", "dependabot.yml"),
+        )
+        self.stdout.write("Done!")
+
+        # Updates webpack config files
+        if os.path.isdir(os.path.join(settings.APP_ROOT, "..", "webpack")):
+            self.stdout.write("Removing previous webpack directory...")
+            shutil.rmtree(
+                os.path.join(settings.APP_ROOT, "..", "webpack"), ignore_errors=True
             )
-            is True
-        ):
-            with open(yarn_config_path, "w") as f:
-                content = '--install.modules-folder "./media/packages"\n--add.modules-folder "./media/packages"'
-                f.write(content)
+            self.stdout.write("Done!")
 
-        if (
-            self.overwite_existing_file(
-                packages_path,
-                "A package.json file already exists. \
-                Would you like to overwrite it with the latest? \
-                If you have not manually modified this file since creating this project,\
-                the answer is probably 'yes'",
-            )
-            is True
-        ):
-            url = "https://raw.githubusercontent.com/archesproject/arches/stable/{0}/package.json".format(version)
-            response = urllib.request.urlopen(url)
-            data = json.loads(response.read())
-            with open(packages_path, "w") as f:
-                json.dump(data, f, indent=4)
+        self.stdout.write("Creating updated webpack directory at project root...")
+        shutil.copytree(
+            os.path.join(settings.ROOT_DIR, "install", "arches-templates", "webpack"),
+            os.path.join(settings.APP_ROOT, "..", "webpack"),
+        )
 
-        if (
-            utils.get_yn_input(
-                "Would you like to update your javascript packages using yarn? \
-                Yarn v1.5.1 or greater is required"
-            )
-            is True
-        ):
-            try:
-                os.chdir(settings.APP_ROOT)
-                subprocess.call("yarn install", shell=True)
-            except Exception as e:
-                print(e)
+        self.stdout.write("Project successfully updated to version 8.1")

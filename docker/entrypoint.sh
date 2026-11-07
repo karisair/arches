@@ -21,23 +21,22 @@ if [[ -z ${ARCHES_PROJECT} ]]; then
 	PACKAGE_JSON_FOLDER=${ARCHES_ROOT}/arches/install
 else
 	APP_FOLDER=${WEB_ROOT}/${ARCHES_PROJECT}
-	# due to https://github.com/archesproject/arches/issues/4841, changes were made to yarn install
-	# and module deployment. Using the arches install directory for yarn.
+	# due to https://github.com/archesproject/arches/issues/4841, changes were made to npm install
+	# and module deployment. Using the arches install directory for npm.
 	PACKAGE_JSON_FOLDER=${ARCHES_ROOT}/arches/install
 fi
 
-# Read modules folder from yarn config file
+# Read modules folder from npm config file
 # Get string after '--install.modules-folder' -> get first word of the result 
 # -> remove line endlings -> trim quotes -> trim leading ./
-YARN_MODULES_FOLDER=${PACKAGE_JSON_FOLDER}/$(awk \
-	-F '--install.modules-folder' '{print $2}' ${PACKAGE_JSON_FOLDER}/.yarnrc \
+NPM_MODULES_FOLDER=${PACKAGE_JSON_FOLDER}/$(awk \
+	-F '--install.modules-folder' '{print $2}' ${PACKAGE_JSON_FOLDER} \
 	| awk '{print $1}' \
 	| tr -d $'\r' \
 	| tr -d '"' \
 	| sed -e "s/^\.\///g")
 
 export DJANGO_PORT=${DJANGO_PORT:-8000}
-COUCHDB_URL="http://$COUCHDB_USER:$COUCHDB_PASS@$COUCHDB_HOST:$COUCHDB_PORT"
 STATIC_ROOT=${STATIC_ROOT:-/static_root}
 
 
@@ -56,7 +55,7 @@ cd_app_folder() {
 	echo "Current work directory: ${APP_FOLDER}"
 }
 
-cd_yarn_folder() {
+cd_npm_folder() {
 	cd ${PACKAGE_JSON_FOLDER}
 	echo "Current work directory: ${PACKAGE_JSON_FOLDER}"
 }
@@ -98,10 +97,6 @@ setup_arches() {
 	echo "Running: python manage.py setup_db --force"
 	python manage.py setup_db --force
 
-    echo "Running: Creating couchdb system databases"
-    curl -X PUT ${COUCHDB_URL}/_users
-    curl -X PUT ${COUCHDB_URL}/_global_changes
-    curl -X PUT ${COUCHDB_URL}/_replicator
 
 	if [[ "${INSTALL_DEFAULT_GRAPHS}" == "True" ]]; then
 		# Import graphs
@@ -186,23 +181,23 @@ set_dev_mode() {
 }
 
 
-# Yarn
-init_yarn_components() {
-	if [[ ! -d ${YARN_MODULES_FOLDER} ]] || [[ ! "$(ls ${YARN_MODULES_FOLDER})" ]]; then
-		echo "Yarn modules do not exist, installing..."
-		install_yarn_components
+# npm
+init_npm_components() {
+	if [[ ! -d ${NPM_MODULES_FOLDER} ]] || [[ ! "$(ls ${NPM_MODULES_FOLDER})" ]]; then
+		echo "npm modules do not exist, installing..."
+		install_npm_components
 	fi
 }
 
 # This is also done in Dockerfile, but that does not include user's custom Arches app package.json
 # Also, the packages folder may have been overlaid by a Docker volume.
-install_yarn_components() {
+install_npm_components() {
 	echo ""
 	echo ""
-	echo "----- INSTALLING YARN COMPONENTS -----"
+	echo "----- INSTALLING NPM COMPONENTS -----"
 	echo ""
-	cd_yarn_folder
-	yarn install
+	cd_npm_folder
+	npm install
 }
 
 
@@ -220,7 +215,7 @@ init_arches_project() {
 			cd_web_root
 			[[ -d ${APP_FOLDER} ]] || mkdir ${APP_FOLDER}
 
-			arches-project create ${ARCHES_PROJECT} --directory ${ARCHES_PROJECT}
+			arches-admin startproject ${ARCHES_PROJECT} --directory ${ARCHES_PROJECT}
 
 			exit_code=$?
 			if [[ ${exit_code} != 0 ]]; then
@@ -320,13 +315,7 @@ run_django_server() {
 	echo "----- *** RUNNING DJANGO DEVELOPMENT SERVER *** -----"
 	echo ""
 	cd_app_folder
-	if [[ ${DJANGO_REMOTE_DEBUG} != "True" ]]; then
-	    echo "Running Django with livereload."
-		exec python manage.py runserver 0.0.0.0:${DJANGO_PORT}
-	else
-        echo "Running Django with options --noreload --nothreading for remote debugging."
-		exec python manage.py runserver --noreload --nothreading 0.0.0.0:${DJANGO_PORT}
-	fi
+	exec python manage.py runserver 0.0.0.0:${DJANGO_PORT}
 }
 
 
@@ -354,7 +343,7 @@ run_arches() {
 
 	init_arches
 
-	init_yarn_components
+	init_npm_components
 
 	if [[ "${DJANGO_MODE}" == "DEV" ]]; then
 		set_dev_mode
@@ -378,7 +367,7 @@ run_tests() {
 	echo "----- RUNNING ARCHES TESTS -----"
 	echo ""
 	cd_arches_root
-	python manage.py test tests --pattern="*.py" --settings="tests.test_settings" --exe
+	python manage.py test tests --settings="tests.test_settings" --exe
 	if [ $? -ne 0 ]; then
         echo "Error: Not all tests ran succesfully."
 		echo "Exiting..."
@@ -427,8 +416,8 @@ do
 			wait_for_db
 			run_migrations
 		;;
-		install_yarn_components)
-			install_yarn_components
+		install_npm_components)
+			install_npm_components
 		;;
 		help|-h)
 			display_help

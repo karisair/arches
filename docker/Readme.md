@@ -72,8 +72,6 @@ Optional Environment Variables:
 	-> **Allows you to run multiple projects in one ElasticSearch instance. It should be the same as `ARCHES_PROJECT`**
 -   `DJANGO_PORT` = *Django server port*  
 	-> **Runs your Django server on an alternative port. Default = 8000**
--   `DJANGO_REMOTE_DEBUG` = True | False  
-	-> **Runs Django with options --noreload --nothreading. Useful for remote debugging.**
 -   `DJANGO_SECRET_KEY` = *50 character string*  
 	-> **Used by Django for security. Use this environment variable only if you run Arches without custom project (i.e. the `ARCHES_PROJECT` environment variable is not set)**
 -   `TZ` = *Time Zone*  
@@ -217,7 +215,7 @@ This will be used throughout your development process and does not need to be ch
         FROM archesproject/arches:latest  
         COPY . ${WEB_ROOT}  
         WORKDIR ${WEB_ROOT}/${ARCHES_PROJECT}/${ARCHES_PROJECT}  
-        RUN yarn install  
+        RUN npm install  
     ```
 
 8.  Build your Docker image using your favorite command line tool (Powershell, CMD, Linux CLI, etc.).  
@@ -317,13 +315,11 @@ The volume section at **point 4** also mounts a `settings_local.py` into the con
 This ensures some important settings, e.g. database and Elasticsearch endpoints, can still be set through environment variables.  
 **This settings file may be overwritten by your own settings file, presuming you are including these settings as well.**
 
-##### Yarn components
+##### npm components
 Because your volume from `step 4` is laid over the files in your container, files generated during image `build` are hidden.  
 In order to install newly added static file packages, run the following command:  
-    `docker-compose -f .\docker-compose-local.yml run arches install_yarn_components`
+    `docker-compose -f .\docker-compose-local.yml run arches install_npm_components`
 
-##### docker-compose-local.yml
-Here is a link to a working [docker-compose-local.yml](https://gist.github.com/jmunowitch/c63fa39be4651b9bf2f0b1abc69f7479) file
 
 
 
@@ -391,15 +387,7 @@ For more information, see the [```docker exec``` command documentation](https://
 
 
 ### Remote Debugging
-In order to enable remote debugging, see [this tutorial](https://gist.github.com/veuncent/1e7fcfe891883dfc52516443a008cfcb) for Visual Studio (Code).  
-Point 4 is handled for you, all you need to do is set this environment variable:
-```
-    environment:
-        - DJANGO_REMOTE_DEBUG=True
-```
-
-For remote debugging Pycharm, see [this tutorial](https://gist.github.com/veuncent/1e7fcfe891883dfc52516443a008cfcb.)
-
+In order to enable remote debugging for Visual Studio (Code), see [this tutorial](https://gist.github.com/veuncent/1e7fcfe891883dfc52516443a008cfcb).  
 
 
 ### Housekeeping

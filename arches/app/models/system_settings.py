@@ -17,8 +17,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
 from django.conf import LazySettings
-from django.db import ProgrammingError, OperationalError
-from django.utils.functional import empty
+from django.core.exceptions import ImproperlyConfigured
+
 from arches.app.models import models
 
 
@@ -42,7 +42,6 @@ class SystemSettings(LazySettings):
 
     def __init__(self, *args, **kwargs):
         super(SystemSettings, self).__init__(*args, **kwargs)
-        # print self
 
     def __str__(self):
         ret = []
@@ -65,18 +64,42 @@ class SystemSettings(LazySettings):
 
         try:
             return super(SystemSettings, self).__getattr__(name)
+        except ImproperlyConfigured:
+            raise
         except:
             self.update_from_db()
-            return super(SystemSettings, self).__getattr__(name)  # getattr(self, name, True)
+            return super(SystemSettings, self).__getattr__(
+                name
+            )  # getattr(self, name, True)
+
+    def setting_exists(self, name):
+        """
+        Checks to see if the setting exists in the system
+        """
+
+        try:
+            super(SystemSettings, self).__getattr__(name)
+            return True
+        except ImproperlyConfigured:
+            raise
+        except:
+            return False
 
     def update_from_db(self, **kwargs):
         """
         Updates the settings the Arches System Settings graph tile instances stored in the database
 
         """
+        from arches.app.datatypes.datatypes import DataTypeFactory
 
         # get all the possible settings defined by the Arches System Settings Graph
-        for node in models.Node.objects.filter(graph_id=self.SYSTEM_SETTINGS_RESOURCE_MODEL_ID):
+        for node in models.Node.objects.filter(
+            graph_id=self.SYSTEM_SETTINGS_RESOURCE_MODEL_ID
+        ).select_related("nodegroup"):
+
+            def setup_blank_setting(name, value):
+                if not self.setting_exists(name):
+                    setattr(self, name, value)
 
             def setup_node(node, parent_node=None):
                 if node.is_collector:
@@ -85,24 +108,42 @@ class SystemSettings(LazySettings):
                         for decendant_node in self.get_direct_decendent_nodes(node):
                             obj[decendant_node.name] = setup_node(decendant_node, node)
 
-                        setattr(self, node.name, obj)
+                        setup_blank_setting(node.name, obj)
 
                     if node.nodegroup.cardinality == "n":
-                        setattr(self, node.name, [])
+                        setup_blank_setting(node.name, [])
                     return getattr(self, node.name)
 
                 if parent_node is not None:
-                    setattr(self, node.name, None)
+                    setup_blank_setting(node.name, None)
 
             setup_node(node)
 
+        n_cardinality_collector_node_names = []
+
         # set any values saved in the instance of the Arches System Settings Graph
-        for tile in models.TileModel.objects.filter(resourceinstance__graph_id=self.SYSTEM_SETTINGS_RESOURCE_MODEL_ID):
+        for tile in (
+            models.TileModel.objects.filter(
+                resourceinstance__graph_id=self.SYSTEM_SETTINGS_RESOURCE_MODEL_ID,
+                # Get tiles only from the latest graph publication.
+                resourceinstance__graph_publication=models.F(
+                    "resourceinstance__graph__publication"
+                ),
+            )
+            .select_related("nodegroup")
+            .order_by("sortorder")
+        ):
             if tile.nodegroup.cardinality == "1":
                 for node in tile.nodegroup.node_set.all():
                     if node.datatype != "semantic":
                         try:
-                            val = tile.data[str(node.nodeid)]
+                            datatype_factory = DataTypeFactory()
+                            datatype = datatype_factory.get_instance(node.datatype)
+                            val = (
+                                datatype.get_default_language_value_from_localized_node(
+                                    tile, node.nodeid
+                                )
+                            )
                             setattr(self, node.name, val)
                         except:
                             pass
@@ -117,24 +158,25 @@ class SystemSettings(LazySettings):
                     if node.datatype != "semantic":
                         obj[node.name] = tile.data[str(node.nodeid)]
 
-                # print collector_nodename
-                # print obj
-
+                # this check will ensure that if an existing list of values exists in settings.py
+                # that those values won't get appended with what's in the database
                 val = getattr(self, collector_nodename)
-                val.append(obj)
+                if collector_nodename in n_cardinality_collector_node_names:
+                    val.append(obj)
+                else:
+                    val = [obj]
+                    n_cardinality_collector_node_names.append(collector_nodename)
                 setattr(self, collector_nodename, val)
-
-        # print self
 
     def get_direct_decendent_nodes(self, node):
         nodes = []
-        for edge in models.Edge.objects.filter(domainnode=node):
+        for edge in (
+            models.Edge.objects.filter(domainnode=node)
+            .select_related("rangenode")
+            .prefetch_related("rangenode__nodegroup")
+        ):
             nodes.append(edge.rangenode)
         return nodes
 
 
 settings = SystemSettings()
-# try:
-#     settings.update_from_db()
-# except OperationalError, ProgrammingError:
-#     print "Skipping system settings update"

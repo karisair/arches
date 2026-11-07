@@ -30,17 +30,10 @@ function install_postgres {
     sudo -u postgres createdb training -T template_postgis
 }
 
-function install_couchdb {
-    sudo add-apt-repository "deb https://apache.bintray.com/couchdb-deb xenial main"
-    sudo apt-get update
-    sudo apt-get install couchdb
-}
-
-function install_yarn {
+function install_npm {
     sudo apt-get update -y
     sudo apt-get install nodejs-legacy -y
     sudo apt-get install npm -y
-    sudo npm install -g yarn
 }
 
 function main {
@@ -60,8 +53,7 @@ function main {
   pip install virtualenv==15.1.0
 
   install_postgres
-  install_couchdb
-  install_yarn
+  install_npm
 }
 
 main

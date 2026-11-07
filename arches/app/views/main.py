@@ -17,10 +17,17 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
 import urllib.request, urllib.error, urllib.parse
+from http import HTTPStatus
 from urllib.parse import urlparse
-from django.shortcuts import render
-from arches.app.models.system_settings import settings
+
 from django.http import HttpResponseNotFound, HttpResponse
+from django.shortcuts import render
+from django.utils.translation import gettext as _
+
+from arches import __version__
+from arches.app.models.system_settings import settings
+from arches.app.utils.request import looks_like_api_call
+from arches.app.utils.response import JSONErrorResponse
 
 
 def index(request):
@@ -33,6 +40,9 @@ def index(request):
             "app_title": settings.APP_TITLE,
             "copyright_text": settings.COPYRIGHT_TEXT,
             "copyright_year": settings.COPYRIGHT_YEAR,
+            "app_version": settings.APP_VERSION,
+            "version": __version__,
+            "show_language_swtich": settings.SHOW_LANGUAGE_SWITCH,
         },
     )
 
@@ -54,10 +64,9 @@ def function_templates(request, template):
 
 
 def templates(request, template):
-    try:
-        return render(request, template)
-    except Exception as e:
-        print(e)
+    if not template:
+        template = request.GET.get("template")
+    return render(request, template)
 
 
 def help_templates(request):
@@ -83,11 +92,36 @@ def feature_popup_content(request):
         return HttpResponseNotFound()
 
 
-def custom_404(request):
-    request = None
-    return render(request, "errors/404.htm")
+def custom_400(request, exception=None):
+    status = HTTPStatus.BAD_REQUEST
+    if looks_like_api_call(request):
+        return JSONErrorResponse(_("Request Failed"), _("Bad Request"), status=status)
+    return render(request, "errors/400.htm", status=status)
 
 
-def custom_500(request):
-    request = None
-    return render(request, "errors/500.htm")
+def custom_403(request, exception=None):
+    status = HTTPStatus.FORBIDDEN
+    if looks_like_api_call(request):
+        return JSONErrorResponse(
+            _("Request Failed"), _("Permission Denied"), status=status
+        )
+    return render(request, "errors/403.htm", status=status)
+
+
+def custom_404(request, exception=None):
+    status = HTTPStatus.NOT_FOUND
+    if looks_like_api_call(request):
+        return JSONErrorResponse(_("Request Failed"), _("Not Found"), status=status)
+    return render(request, "errors/404.htm", status=status)
+
+
+def custom_500(request, exception=None):
+    status = HTTPStatus.INTERNAL_SERVER_ERROR
+    if looks_like_api_call(request):
+        return JSONErrorResponse(
+            # Exclamation point matches translated string in template.
+            _("Request Failed"),
+            _("Internal Server Error!"),
+            status=status,
+        )
+    return render(request, "errors/500.htm", status=status)

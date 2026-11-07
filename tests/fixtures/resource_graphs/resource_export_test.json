@@ -2159,7 +2159,7 @@
                     "card_id": "6ead4abd-09cc-11e7-a400-6c4008b05c4c",
                     "config": {
                         "defaultValue": "",
-                        "label": "Spatial Accuraccy",
+                        "label": "Spatial Accuracy",
                         "options": [
                             {
                                 "children": [],
@@ -2213,7 +2213,7 @@
                         "placeholder": "Select an option"
                     },
                     "id": "6ead59c7-09cc-11e7-a6f6-6c4008b05c4c",
-                    "label": "Spatial Accuraccy",
+                    "label": "Spatial Accuracy",
                     "node_id": "6ead54a6-09cc-11e7-9081-6c4008b05c4c",
                     "sortorder": 0,
                     "widget_id": "10000000-0000-0000-0000-000000000002"
@@ -66359,17 +66359,21 @@
             "functions_x_graphs": [
                 {
                     "config": {
-                        "description": {
-                            "nodegroup_id": "ab74af95-fa0e-11e6-9e3e-026d961c88e6",
-                            "string_template": "<Description>"
-                        },
-                        "map_popup": {
-                            "nodegroup_id": "ab74af95-fa0e-11e6-9e3e-026d961c88e6",
-                            "string_template": "<Description>"
-                        },
-                        "name": {
-                            "nodegroup_id": "677f303d-09cc-11e7-9aa6-6c4008b05c4c",
-                            "string_template": "<Name>"
+                        "module": "arches.app.functions.primary_descriptors",
+                        "class_name": "PrimaryDescriptorsFunction",
+                        "descriptor_types": {
+                            "description": {
+                                "nodegroup_id": "ab74af95-fa0e-11e6-9e3e-026d961c88e6",
+                                "string_template": "<Description>"
+                            },
+                            "map_popup": {
+                                "nodegroup_id": "ab74af95-fa0e-11e6-9e3e-026d961c88e6",
+                                "string_template": "<Description>"
+                            },
+                            "name": {
+                                "nodegroup_id": "677f303d-09cc-11e7-9aa6-6c4008b05c4c",
+                                "string_template": "<Name>"
+                            }
                         },
                         "triggering_nodegroups": []
                     },
@@ -66381,7 +66385,6 @@
             "graphid": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
             "iconclass": "fa fa-bank",
             "is_editable": true,
-            "isactive": true,
             "isresource": true,
             "jsonldcontext": null,
             "name": "Assets",
@@ -66542,7 +66545,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P12i_was_present_at"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -66629,7 +66632,7 @@
                     "isrequired": false,
                     "issearchable": true,
                     "istopnode": false,
-                    "name": "Spatial Accuraccy",
+                    "name": "Spatial Accuracy II",
                     "nodegroup_id": "6ead47f5-09cc-11e7-96db-6c4008b05c4c",
                     "nodeid": "6ead53b8-09cc-11e7-a1d5-6c4008b05c4c",
                     "ontologyclass": "http://www.ics.forth.gr/isl/CRMinf/I2_Belief",
@@ -66700,7 +66703,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P87_is_identified_by"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -66740,7 +66743,7 @@
                     "isrequired": false,
                     "issearchable": true,
                     "istopnode": false,
-                    "name": "Spatial Accuraccy",
+                    "name": "Spatial Accuracy",
                     "nodegroup_id": "6ead47f5-09cc-11e7-96db-6c4008b05c4c",
                     "nodeid": "6ead54a6-09cc-11e7-9081-6c4008b05c4c",
                     "ontologyclass": "http://www.cidoc-crm.org/cidoc-crm/E55_Type",
@@ -66826,7 +66829,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P4_has_time-span"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -66920,7 +66923,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P3_has_note"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -66965,7 +66968,7 @@
                     "parentproperty": "http://www.ics.forth.gr/isl/CRMdig/L54_is_same-as"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -67044,7 +67047,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P40_observed_dimension"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -67183,7 +67186,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P140i_was_attributed_by"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -67399,7 +67402,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P2_has_type"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -67525,7 +67528,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P87_is_identified_by"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -67543,7 +67546,7 @@
                     "config": {
                         "addToMap": true,
                         "advancedStyle": "",
-                        "advancedStyling": false, 
+                        "advancedStyling": false,
                         "clusterDistance": "5",
                         "clusterMaxZoom": "14",
                         "clusterMinPoints": "8",
@@ -67643,7 +67646,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P2_has_type"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -67692,7 +67695,7 @@
                     "parentproperty": "http://www.cidoc-crm.org/cidoc-crm/P2_has_type"
                 },
                 {
-                    "config": null,
+                    "config": {"dateFormat": "YYYY-MM-DD"},
                     "datatype": "date",
                     "description": "Represents a single node in a graph",
                     "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
@@ -68103,7 +68106,7 @@
                                                     "label": "Geometry Qualifier"
                                                 },
                                                 "6ead54a6-09cc-11e7-9081-6c4008b05c4c": {
-                                                    "label": "Spatial Accuraccy"
+                                                    "label": "Spatial Accuracy"
                                                 },
                                                 "6ead55a1-09cc-11e7-a880-6c4008b05c4c": {
                                                     "label": "Metadata Description"
@@ -68156,6 +68159,13 @@
                     "template_id": "50000000-0000-0000-0000-000000000002"
                 }
             ],
+            "publication": {
+                "graph_id": "ab74af76-fa0e-11e6-9e3e-026d961c88e6",
+                "notes": "Initial migration.",
+                "publicationid": "f546e4de-aa0d-11ec-99a5-8e0f431ffc6d",
+                "published_time": "2022-03-22T13:29:06.593",
+                "user_id": null
+            },
             "resource_2_resource_constraints": [],
             "root": {
                 "config": {
@@ -68173,6 +68183,7 @@
                 "nodeid": "ab74afd6-fa0e-11e6-9e3e-026d961c88e6",
                 "ontologyclass": "http://www.cidoc-crm.org/cidoc-crm/E18_Physical_Thing"
             },
+            "slug": "assets",
             "subtitle": "Describes heritage resources, which includes monuments, buildings, structures, etc.",
             "version": ""
         }

@@ -19,6 +19,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 """This module contains commands for building Arches."""
 
 import os
+import sys
+
 from arches.management.commands import utils
 from arches.app.models import models
 from django.core.management.base import BaseCommand, CommandError
@@ -33,9 +35,23 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("operation", nargs="?")
 
-        parser.add_argument("-s", "--source", action="store", dest="dt_source", default="", help="Datatype file to be loaded")
+        parser.add_argument(
+            "-s",
+            "--source",
+            action="store",
+            dest="dt_source",
+            default="",
+            help="Datatype file to be loaded",
+        )
 
-        parser.add_argument("-d", "--datatype", action="store", dest="datatype", default="", help="The name of the datatype to unregister")
+        parser.add_argument(
+            "-d",
+            "--datatype",
+            action="store",
+            dest="datatype",
+            default="",
+            help="The name of the datatype to unregister",
+        )
 
     def handle(self, *args, **options):
         if options["operation"] == "register":
@@ -55,11 +71,16 @@ class Command(BaseCommand):
         Inserts a datatype into the arches db
 
         """
-
-        import imp
-
-        dt_source = imp.load_source("", source)
-        details = dt_source.details
+        utils.load_source("dt_source", source)
+        try:
+            details = sys.modules["dt_source"].details
+        except AttributeError:
+            sys.stderr.write(
+                "Datatype details not found in {0}, skipping datatype registration.".format(
+                    source
+                )
+            )
+            return
         self.validate_details(details)
 
         dt = models.DDataType(
@@ -103,11 +124,8 @@ class Command(BaseCommand):
         Updates an existing datatype in the arches db
 
         """
-
-        import imp
-
-        dt_source = imp.load_source("", source)
-        details = dt_source.details
+        utils.load_source("dt_source", source)
+        details = sys.modules["dt_source"].details
         self.validate_details(details)
 
         instance = models.DDataType.objects.get(datatype=details["datatype"])

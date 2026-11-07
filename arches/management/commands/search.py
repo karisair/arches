@@ -16,10 +16,11 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
-import os
+import sys
 import uuid
-import imp
+
 from arches.app.models import models
+from arches.management.commands import utils
 from django.core.management.base import BaseCommand, CommandError
 
 
@@ -33,10 +34,22 @@ class Command(BaseCommand):
         parser.add_argument("operation", nargs="?")
 
         parser.add_argument(
-            "-s", "--source", action="store", dest="source", default="", help="Search Component json file or string to be loaded"
+            "-s",
+            "--source",
+            action="store",
+            dest="source",
+            default="",
+            help="Search Component json file or string to be loaded",
         )
 
-        parser.add_argument("-n", "--name", action="store", dest="name", default="", help="The js component name of the search component")
+        parser.add_argument(
+            "-n",
+            "--name",
+            action="store",
+            dest="name",
+            default="",
+            help="The js component name of the search component",
+        )
 
     def handle(self, *args, **options):
         if options["operation"] == "register":
@@ -57,16 +70,19 @@ class Command(BaseCommand):
 
         """
 
-        dt_source = imp.load_source("", source)
+        utils.load_source("sc_source", source)
 
-        if getattr(dt_source, "details", None):
-            details = dt_source.details
+        if getattr(sys.modules, "sc_source", None):
+            details = sys.modules["sc_source"].details
 
             try:
                 uuid.UUID(details["searchcomponentid"])
             except:
                 details["searchcomponentid"] = str(uuid.uuid4())
-            print("Registering the search component, %s, with componentid: %s" % (details["name"], details["searchcomponentid"]))
+            print(
+                "Registering the search component, %s, with componentid: %s"
+                % (details["name"], details["searchcomponentid"])
+            )
 
             instance = models.SearchComponent(
                 searchcomponentid=details["searchcomponentid"],
@@ -89,8 +105,8 @@ class Command(BaseCommand):
 
         """
 
-        dt_source = imp.load_source("", source)
-        name = dt_source.details["componentname"]
+        utils.load_source("sc_source", source)
+        name = sys.modules["sc_source"].details["componentname"]
 
         self.unregister(name)
         self.register(source)

@@ -17,7 +17,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
 from arches.app.utils.betterJSONSerializer import JSONSerializer
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 
 
 class Dsl(object):
@@ -54,7 +54,11 @@ class Query(Dsl):
         self.limit = kwargs.pop("limit", 10)
         self.scroll = None
 
-        self.dsl = {"query": {"match_all": {}}, "_source": {"includes": [], "excludes": []}}
+        self.dsl = {
+            "query": {"match_all": {}},
+            "source_includes": [],
+            "source_excludes": [],
+        }
 
         for key, value in kwargs.items():
             self.dsl[key] = value
@@ -76,10 +80,13 @@ class Query(Dsl):
             self.dsl["aggs"][agg.name] = agg.agg[agg.name]
 
     def include(self, include):
-        self.dsl["_source"]["includes"].append(include)
+        self.dsl["source_includes"].append(include)
 
     def exclude(self, exclude):
-        self.dsl["_source"]["excludes"].append(exclude)
+        self.dsl["source_excludes"].append(exclude)
+
+    def sort(self, field, dsl):
+        self.dsl["sort"] = [{field: dsl}]
 
     def min_score(self, min_score):
         self.dsl["min_score"] = min_score
@@ -90,15 +97,20 @@ class Query(Dsl):
         self.scroll = kwargs.pop("scroll", None)
         self.prepare()
         if self.scroll is None:
-            return self.se.search(index=index, body=self.dsl)
+            return self.se.search(index=index, id=kwargs.get("id", None), **self.dsl)
         else:
-            return self.se.search(index=index, body=self.dsl, scroll=self.scroll)
+            return self.se.search(index=index, scroll=self.scroll, **self.dsl)
 
     def count(self, index="", **kwargs):
-        return self.se.count(index=index, body=self.dsl)
+        if (
+            not "minimum_should_match" in self.dsl["query"]["bool"]
+            and len(self.dsl["query"]["bool"]["should"]) > 0
+        ):
+            self.dsl["query"]["bool"]["minimum_should_match"] = 1
+        return self.se.count(index=index, **self.dsl)
 
     def delete(self, index="", **kwargs):
-        return self.se.delete(index=index, body=self.dsl, **kwargs)
+        return self.se.delete(index=index, query=self.dsl, **kwargs)
 
     def prepare(self, scroll=False):
         if self.scroll is None:
@@ -151,10 +163,28 @@ class Bool(Dsl):
             object = Bool(object)
 
         self.dsl["bool"]["must"] = self.dsl["bool"]["must"] + object.dsl["bool"]["must"]
-        self.dsl["bool"]["should"] = self.dsl["bool"]["should"] + object.dsl["bool"]["should"]
-        self.dsl["bool"]["must_not"] = self.dsl["bool"]["must_not"] + object.dsl["bool"]["must_not"]
-        self.dsl["bool"]["filter"] = self.dsl["bool"]["filter"] + object.dsl["bool"]["filter"]
+        self.dsl["bool"]["should"] = (
+            self.dsl["bool"]["should"] + object.dsl["bool"]["should"]
+        )
+        self.dsl["bool"]["must_not"] = (
+            self.dsl["bool"]["must_not"] + object.dsl["bool"]["must_not"]
+        )
+        self.dsl["bool"]["filter"] = (
+            self.dsl["bool"]["filter"] + object.dsl["bool"]["filter"]
+        )
 
+        this_min_should = (
+            self.dsl["bool"]["minimum_should_match"]
+            if "minimum_should_match" in self.dsl["bool"]
+            else None
+        )
+        other_min_should = (
+            object.dsl["bool"]["minimum_should_match"]
+            if "minimum_should_match" in object.dsl["bool"]
+            else None
+        )
+        if not this_min_should and other_min_should:
+            self.dsl["bool"]["minimum_should_match"] = other_min_should
         return self
 
 
@@ -257,7 +287,13 @@ class GeoShape(Dsl):
         self.type = kwargs.pop("type", "")
         self.coordinates = kwargs.pop("coordinates", "")
 
-        self.dsl = {"geo_shape": {self.field: {"shape": {"type": self.type, "coordinates": self.coordinates}}}}
+        self.dsl = {
+            "geo_shape": {
+                self.field: {
+                    "shape": {"type": self.type, "coordinates": self.coordinates}
+                }
+            }
+        }
 
 
 class Range(Dsl):
@@ -282,8 +318,17 @@ class Range(Dsl):
 
         self.dsl = {"range": {self.field: boost}}
 
-        if self.gte is None and self.gt is None and self.lte is None and self.lt is None:
-            raise RangeDSLException(_("You need at least one of the following operators in a Range expression: gte, gt, lte, or lt"))
+        if (
+            self.gte is None
+            and self.gt is None
+            and self.lte is None
+            and self.lt is None
+        ):
+            raise RangeDSLException(
+                _(
+                    "You need at least one of the following operators in a Range expression: gte, gt, lte, or lt"
+                )
+            )
         if self.gte is not None and self.gt is not None:
             raise RangeDSLException(_("You can only use one of either: gte or gt"))
         if self.lte is not None and self.lt is not None:
@@ -312,21 +357,48 @@ class SimpleQueryString(Dsl):
     """
 
     def __init__(self, **kwargs):
-        self.field = kwargs.pop("field", "_all")  # can be a list of fields
+        self.field = kwargs.pop("field", "_all")
         self.query = kwargs.pop("query", "")
         self.operator = kwargs.pop("operator", "or")
         self.analyzer = kwargs.pop("analyzer", "snowball")
         self.flags = kwargs.pop("flags", "OR|AND|PREFIX")
+        self.analyze_wildcard = kwargs.pop("analyze_wildcard", False)
         # The available flags are: ALL, NONE, AND, OR, PREFIX, PHRASE, PRECEDENCE, ESCAPE, WHITESPACE, FUZZY, NEAR, and SLOP.
 
-        # if not isinstance(self.field, list):
-        #     self.field = [self.field]
+        if not isinstance(self.field, list):
+            self.field = [self.field]
 
         self.dsl = {
-            "simple_query_string": {"fields": self.field, "query": self.query, "default_operator": self.operator, "flags": self.flags}
+            "simple_query_string": {
+                "fields": self.field,
+                "query": self.query,
+                "default_operator": self.operator,
+                "flags": self.flags,
+                "analyze_wildcard": self.analyze_wildcard,
+            }
         }
 
-        self.dsl = {"prefix": {self.field: self.query}}
+
+class QueryString(Dsl):
+    """
+    https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-query-string-query.html
+
+    """
+
+    def __init__(self, **kwargs):
+        self.field = kwargs.pop("field", "_all")
+        self.query = kwargs.pop("query", "")
+
+        if not isinstance(self.field, list):
+            self.field = [self.field]
+
+        query_obj = {
+            "fields": self.field,
+            "query": self.query,
+        }
+        query_obj.update(dict(kwargs))
+
+        self.dsl = {"query_string": query_obj}
 
 
 class Exists(Dsl):
@@ -338,6 +410,86 @@ class Exists(Dsl):
     def __init__(self, **kwargs):
         self.field = kwargs.pop("field", "")
         self.dsl = {"exists": {"field": self.field}}
+
+
+class Ids(Dsl):
+    """
+    https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-ids-query.html
+
+    Keyword Arguments:
+    ids -- a single document id as a string, or a list of document ids
+
+    """
+
+    def __init__(self, **kwargs):
+        self.ids = kwargs.pop("ids", None)
+        if not isinstance(self.ids, list):
+            self.ids = [self.ids]
+        self.dsl = {"ids": {"values": self.ids}}
+
+
+class Wildcard(Dsl):
+    """
+    https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-wildcard-query.html
+
+    """
+
+    def __init__(self, **kwargs):
+        self.field = kwargs.pop("field", "_all")
+        self.query = kwargs.pop("query", "")
+        self.case_insensitive = kwargs.pop("case_insensitive", True)
+
+        self.dsl = {
+            "wildcard": {
+                self.field: {
+                    "value": self.query,
+                    "case_insensitive": self.case_insensitive,
+                }
+            }
+        }
+
+
+class Regex(Dsl):
+    """
+    https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-regexp-query.html
+
+    """
+
+    def __init__(self, **kwargs):
+        self.field = kwargs.pop("field", "_all")
+        self.query = kwargs.pop("query", "")
+        self.case_insensitive = kwargs.pop("case_insensitive", True)
+
+        self.dsl = {
+            "regexp": {
+                self.field: {
+                    "value": self.query,
+                    "flags": "ALL",
+                    "case_insensitive": self.case_insensitive,
+                }
+            }
+        }
+
+
+class Prefix(Dsl):
+    """
+    https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-prefix-query.html
+
+    """
+
+    def __init__(self, **kwargs):
+        self.field = kwargs.pop("field", "_all")
+        self.query = kwargs.pop("query", "")
+        self.case_insensitive = kwargs.pop("case_insensitive", True)
+
+        self.dsl = {
+            "prefix": {
+                self.field: {
+                    "value": self.query,
+                    "case_insensitive": self.case_insensitive,
+                }
+            }
+        }
 
 
 class Aggregation(Dsl):
@@ -355,9 +507,13 @@ class Aggregation(Dsl):
         self.size = kwargs.pop("size", None)
 
         if self.field is not None and self.script is not None:
-            raise AggregationDSLException(_('You need to specify either a "field" or a "script"'))
+            raise AggregationDSLException(
+                _('You need to specify either a "field" or a "script"')
+            )
         if self.name is None:
-            raise AggregationDSLException(_("You need to specify a name for your aggregation"))
+            raise AggregationDSLException(
+                _("You need to specify a name for your aggregation")
+            )
         if self.type is None:
             raise AggregationDSLException(_("You need to specify an aggregation type"))
 
@@ -400,6 +556,18 @@ class GeoHashGridAgg(Aggregation):
         self.precision = kwargs.get("precision", 5)
         super(GeoHashGridAgg, self).__init__(type="geohash_grid", **kwargs)
 
+        self.agg[self.name][self.type]["precision"] = self.precision
+
+
+class GeoTileGridAgg(Aggregation):
+    """
+    https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-geotilegrid-aggregation.html
+
+    """
+
+    def __init__(self, **kwargs):
+        self.precision = kwargs.get("precision", 5)
+        super(GeoTileGridAgg, self).__init__(type="geotile_grid", **kwargs)
         self.agg[self.name][self.type]["precision"] = self.precision
 
 
@@ -548,7 +716,9 @@ class NestedAgg(Aggregation):
         self.aggregation = kwargs.pop("agg", {})
         self.path = kwargs.pop("path", None)
         if self.path is None:
-            raise NestedAggDSLException(_("You need to specify a path for your nested aggregation"))
+            raise NestedAggDSLException(
+                _("You need to specify a path for your nested aggregation")
+            )
         super(NestedAgg, self).__init__(type="nested", path=self.path, **kwargs)
 
         if self.name:

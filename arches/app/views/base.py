@@ -16,18 +16,23 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
 
-
 from arches.app.models import models
 from arches.app.models.system_settings import settings
 from arches.app.models.resource import Resource
 from arches.app.utils.betterJSONSerializer import JSONSerializer, JSONDeserializer
+from django.utils.translation import gettext as _
 from django.views.generic import TemplateView
 from arches.app.datatypes.datatypes import DataTypeFactory
-from arches.app.utils.permission_backend import get_createable_resource_types, user_is_resource_reviewer
+from arches.app.utils.permission_backend import (
+    get_createable_resource_models,
+    user_is_resource_reviewer,
+    get_editable_resource_types,
+    get_resource_types_by_perm,
+    user_can_read_map_layers,
+)
 
 
 class BaseManagerView(TemplateView):
-
     template_name = ""
 
     def get_context_data(self, **kwargs):
@@ -36,17 +41,17 @@ class BaseManagerView(TemplateView):
         context["graph_models"] = []
         context["graphs"] = "[]"
         context["plugins"] = []
-        for plugin in models.Plugin.objects.all().order_by("sortorder"):
+        for plugin in models.Plugin.objects.all():
             if self.request.user.has_perm("view_plugin", plugin):
                 context["plugins"].append(plugin)
+
+        createable = list(get_createable_resource_models(self.request.user))
+        createable.sort(key=lambda x: x.name.lower())
         context["createable_resources"] = JSONSerializer().serialize(
-            get_createable_resource_types(self.request.user),
+            createable,
             exclude=[
                 "functions",
                 "ontology",
-                "subtitle",
-                "color",
-                "isactive",
                 "isresource",
                 "version",
                 "deploymentdate",
@@ -54,7 +59,10 @@ class BaseManagerView(TemplateView):
                 "author",
             ],
         )
-        context["notifications"] = models.UserXNotification.objects.filter(recipient=self.request.user, isread=False)
+
+        context["notifications"] = models.UserXNotification.objects.filter(
+            recipient=self.request.user, isread=False
+        )
         context["nav"] = {
             "icon": "fa fa-chevron-circle-right",
             "title": "",
@@ -69,7 +77,24 @@ class BaseManagerView(TemplateView):
             "print": False,
         }
         context["user_is_reviewer"] = user_is_resource_reviewer(self.request.user)
+        context["user_can_edit"] = (
+            len(get_editable_resource_types(self.request.user)) > 0
+        )
+        context["user_can_read"] = (
+            len(
+                get_resource_types_by_perm(
+                    self.request.user,
+                    [
+                        "models.write_nodegroup",
+                        "models.delete_nodegroup",
+                        "models.read_nodegroup",
+                    ],
+                )
+            )
+            > 0
+        )
         context["app_name"] = settings.APP_NAME
+        context["show_language_swtich"] = settings.SHOW_LANGUAGE_SWITCH
         return context
 
 
@@ -77,9 +102,15 @@ class MapBaseManagerView(BaseManagerView):
     def get_context_data(self, **kwargs):
         context = super(MapBaseManagerView, self).get_context_data(**kwargs)
         datatype_factory = DataTypeFactory()
-        geom_datatypes = [d.pk for d in models.DDataType.objects.filter(isgeometric=True)]
-        geom_nodes = models.Node.objects.filter(graph__isresource=True, graph__isactive=True, datatype__in=geom_datatypes).exclude(
-            graph__graphid=settings.SYSTEM_SETTINGS_RESOURCE_MODEL_ID
+        geom_nodes = (
+            models.Node.objects.filter(
+                graph__isresource=True,
+                graph__is_active=True,
+                graph__source_identifier__isnull=True,
+                datatype__in=models.DDataType.objects.filter(isgeometric=True),
+            )
+            .exclude(graph__graphid=settings.SYSTEM_SETTINGS_RESOURCE_MODEL_ID)
+            .select_related("nodegroup")
         )
         resource_layers = []
         resource_sources = []
@@ -96,5 +127,12 @@ class MapBaseManagerView(BaseManagerView):
         context["geom_nodes"] = geom_nodes
         context["resource_map_layers"] = resource_layers
         context["resource_map_sources"] = resource_sources
+
+        all_map_sources = models.MapSource.objects.all()
+
+        map_layers = user_can_read_map_layers(self.request.user)
+
+        context["map_layers"] = map_layers
+        context["map_sources"] = all_map_sources
 
         return context

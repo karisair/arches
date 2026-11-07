@@ -1,4 +1,4 @@
-{% load staticfiles %}
+{% load static %}
 {% load i18n %}
 <div id="menu-panel" class="ep-menu" style="display: none;" data-bind="visible:menuActive()">
     <div class="panel ep-menu-panel relative" style="">
@@ -8,7 +8,7 @@
            <ul class="list-group ep-menu-list">
                 <!-- Menu Item -->
                 <li class="resource-selector" data-bind="click: function() { menuActive(true); }, clickBubble: false">
-                    <select data-placeholder="{% trans "Select a graph..." %}" class="design" style="width:100px;" data-bind="value: graphid, options: allGraphs, optionsText: 'name', optionsValue: 'graphid', chosen: {'width': '100%'}"></select>
+                    <select data-placeholder="{% trans "Select a graph..." %}" class="design" style="width:100px;" data-bind="value: graphid, options: resources, optionsText: 'name', optionsValue: 'graphid', chosen: {'width': '100%'}"></select>
                 </li>
 
                 <!-- Menu Item -->
@@ -34,7 +34,7 @@
         </div>
         <div class="panel-footer ep-menu-footer hidden">
 
-            footer
+            {% trans "footer" %}
         </div>
     </div>
 </div>

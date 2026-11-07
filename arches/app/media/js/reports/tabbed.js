@@ -1,9 +1,8 @@
-define([
-    'knockout',
-    'viewmodels/tabbed-report'
-], function(ko, TabbedReportViewModel) {
-    return ko.components.register('tabbed-report', {
-        viewModel: TabbedReportViewModel,
-        template: { require: 'text!report-templates/tabbed' }
-    });
+import ko from 'knockout';
+import TabbedReportViewModel from 'viewmodels/tabbed-report';
+import tabbedReportTemplate from 'templates/views/report-templates/tabbed.htm';
+
+export default ko.components.register('tabbed-report', {
+    viewModel: TabbedReportViewModel,
+    template: tabbedReportTemplate,
 });

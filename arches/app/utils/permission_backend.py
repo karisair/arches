@@ -1,396 +1,420 @@
-from arches.app.models.models import Node
+from abc import abstractmethod, ABCMeta
+from typing import Iterable
+
+from django.contrib.auth.models import User
+
+from arches.app.const import ExtensionType
+from arches.app.models.models import EditLog, GraphModel
 from arches.app.models.system_settings import settings
-from guardian.backends import check_support
-from guardian.backends import ObjectPermissionBackend
-from django.core.exceptions import ObjectDoesNotExist
-from guardian.core import ObjectPermissionChecker
-from guardian.shortcuts import (
-    get_perms,
-    get_objects_for_user,
-    get_group_perms,
-    get_user_perms,
-    get_users_with_perms,
-    remove_perm,
-    assign_perm,
-)
-from guardian.exceptions import WrongAppError
-from django.contrib.auth.models import User, Group, Permission
-from arches.app.models.models import ResourceInstance
-from arches.app.search.search_engine_factory import SearchEngineFactory
-from arches.app.search.elasticsearch_dsl_builder import Bool, Query, Terms
+from arches.app.utils.module_importer import get_class_from_modulename
 
 
-class PermissionBackend(ObjectPermissionBackend):
+class NotUserNorGroup(Exception): ...
+
+
+class PermissionBackend:
+    def __init__(self):
+        self._backend = _get_permission_backend()
+
+    def authenticate(self, request, username=None, password=None):
+        return self._backend.authenticate(request, username=username, password=password)
+
     def has_perm(self, user_obj, perm, obj=None):
-        # check if user_obj and object are supported (pulled directly from guardian)
-        support, user_obj = check_support(user_obj, obj)
-        if not support:
-            return False
+        return self._backend.has_perm(user_obj, perm, obj=obj)
 
-        if "." in perm:
-            app_label, perm = perm.split(".")
-            if app_label != obj._meta.app_label:
-                raise WrongAppError("Passed perm has app label of '%s' and " "given obj has '%s'" % (app_label, obj._meta.app_label))
-
-        explicitly_defined_perms = get_perms(user_obj, obj)
-        if len(explicitly_defined_perms) > 0:
-            if "no_access_to_nodegroup" in explicitly_defined_perms:
-                return False
-            else:
-                return perm in explicitly_defined_perms
-        else:
-            default_perms = []
-            for group in user_obj.groups.all():
-                for permission in group.permissions.all():
-                    if perm in permission.codename:
-                        return True
-            return False
+    def get_all_permissions(self, user_obj, obj=None):
+        return self._backend.get_all_permissions(user_obj, obj=obj)
 
 
-def get_restricted_users(resource):
-    """
-    Takes a resource instance and identifies which users are explicitly restricted from
-    reading, editing, deleting, or accessing it.
-
-    """
-
-    user_perms = get_users_with_perms(resource, attach_perms=True, with_group_users=False)
-    user_and_group_perms = get_users_with_perms(resource, attach_perms=True, with_group_users=True)
-
-    result = {
-        "no_access": [],
-        "cannot_read": [],
-        "cannot_write": [],
-        "cannot_delete": [],
-    }
-
-    for user, perms in user_and_group_perms.items():
+def user_created_transaction(user, transactionid):
+    if user.is_authenticated:
         if user.is_superuser:
-            pass
-        elif user in user_perms and "no_access_to_resourceinstance" in user_perms[user]:
-            for k, v in result.items():
-                v.append(user.id)
+            return True
+        if EditLog.objects.filter(transactionid=transactionid).exists():
+            if EditLog.objects.filter(
+                transactionid=transactionid, userid=user.id
+            ).exists():
+                return True
         else:
-            if "view_resourceinstance" not in perms:
-                result["cannot_read"].append(user.id)
-            if "change_resourceinstance" not in perms:
-                result["cannot_write"].append(user.id)
-            if "delete_resourceinstance" not in perms:
-                result["cannot_delete"].append(user.id)
-            if "no_access_to_resourceinstance" in perms and len(perms) == 1:
-                result["no_access"].append(user.id)
-
-    return result
+            return True
+    return False
 
 
-def get_restricted_instances(user):
-    if user.is_superuser is False:
-        se = SearchEngineFactory().create()
-        query = Query(se, start=0, limit=settings.SEARCH_RESULT_LIMIT)
-        has_access = Bool()
-        terms = Terms(field="permissions.users_with_no_access", terms=[str(user.id)])
-        has_access.must(terms)
-        query.add_query(has_access)
-        results = query.search(index="resources", scroll="1m")
-        scroll_id = results["_scroll_id"]
-        total = results["hits"]["total"]["value"]
-        if total > settings.SEARCH_RESULT_LIMIT:
-            pages = total // settings.SEARCH_RESULT_LIMIT
-            for page in range(pages):
-                results_scrolled = query.se.es.scroll(scroll_id=scroll_id, scroll="1m")
-                results["hits"]["hits"] += results_scrolled["hits"]["hits"]
-        restricted_ids = [res["_id"] for res in results["hits"]["hits"]]
-        return restricted_ids
-    else:
-        return []
+class PermissionFramework(metaclass=ABCMeta):
+    @abstractmethod
+    def user_can_read_graph(self, user, graph_id): ...
+
+    @abstractmethod
+    def user_can_delete_model_nodegroups(self, user, resource): ...
+
+    @abstractmethod
+    def user_can_edit_model_nodegroups(self, user, resource): ...
+
+    @abstractmethod
+    def get_createable_resource_types(self, user): ...
+
+    @abstractmethod
+    def get_editable_resource_types(self, user): ...
+
+    @abstractmethod
+    def assign_perm(self, perm, user_or_group, obj=None): ...
+
+    @abstractmethod
+    def remove_perm(self, perm, user_or_group=None, obj=None): ...
+
+    @abstractmethod
+    def get_permission_backend(self): ...
+
+    @abstractmethod
+    def get_restricted_users(
+        self, resource, *, all_users: Iterable[User] = User.objects.none()
+    ): ...
+
+    @abstractmethod
+    def get_filtered_instances(
+        self, user, search_engine=None, allresources=False, resources=None
+    ): ...
+
+    @abstractmethod
+    def get_groups_with_permission_for_object(self, perm, obj): ...
+
+    @abstractmethod
+    def get_users_with_permission_for_object(self, perm, obj): ...
+
+    @abstractmethod
+    def check_resource_instance_permissions(
+        self, user, resourceid, permission, *, resource=None
+    ): ...
+
+    @abstractmethod
+    def get_nodegroups_by_perm(self, user, perms, any_perm=True): ...
+
+    @abstractmethod
+    def get_map_layers_by_perm(self, user, perms, any_perm=True): ...
+
+    @abstractmethod
+    def user_can_read_map_layers(self, user): ...
+
+    @abstractmethod
+    def user_can_write_map_layers(self, user): ...
+
+    @abstractmethod
+    def process_new_user(self, instance, created): ...
+
+    @abstractmethod
+    def user_has_resource_model_permissions(self, user, perms, resource): ...
+
+    @abstractmethod
+    def user_can_read_resource(self, user, resourceid=None, *, resource=None): ...
+
+    @abstractmethod
+    def user_can_edit_resource(self, user, resourceid=None, *, resource=None): ...
+
+    @abstractmethod
+    def user_can_delete_resource(self, user, resourceid=None, *, resource=None): ...
+
+    @abstractmethod
+    def user_can_read_concepts(self, user): ...
+
+    @abstractmethod
+    def user_is_resource_editor(self, user): ...
+
+    @abstractmethod
+    def user_is_resource_reviewer(self, user): ...
+
+    @abstractmethod
+    def user_is_resource_exporter(self, user): ...
+
+    @abstractmethod
+    def get_resource_types_by_perm(self, user, perms): ...
+
+    @abstractmethod
+    def user_in_group_by_name(self, user, names): ...
+
+    @abstractmethod
+    def group_required(self, user, *group_names): ...
+
+    @abstractmethod
+    def update_mappings(self): ...
+
+    @abstractmethod
+    def get_index_values(
+        self, resource, *, all_users: Iterable[User] = User.objects.none()
+    ): ...
+
+    @abstractmethod
+    def get_permission_inclusions(self): ...
+
+    @abstractmethod
+    def get_permission_search_filter(self, user): ...
+
+    @abstractmethod
+    def get_search_ui_permissions(self, user, search_result, groups=None): ...
+
+    @abstractmethod
+    def get_default_permissions(user_or_group, model): ...
+
+    @abstractmethod
+    def get_default_settable_permissions(self): ...
 
 
-def get_groups_for_object(perm, obj):
-    """
-    returns a list of group objects that have the given permission on the given object
+_PERMISSION_FRAMEWORK = None
 
-    Arguments:
-    perm -- the permssion string eg: "read_nodegroup"
-    obj -- the model instance to check
 
-    """
-
-    def has_group_perm(group, perm, obj):
-        explicitly_defined_perms = get_perms(group, obj)
-        if len(explicitly_defined_perms) > 0:
-            if "no_access_to_nodegroup" in explicitly_defined_perms:
-                return False
-            else:
-                return perm in explicitly_defined_perms
+def _get_permission_framework():
+    global _PERMISSION_FRAMEWORK
+    if not _PERMISSION_FRAMEWORK:
+        if settings.PERMISSION_FRAMEWORK:
+            if "." not in settings.PERMISSION_FRAMEWORK:
+                raise RuntimeError(
+                    "Permissions frameworks must be a dot-separated module and a class"
+                )
+            modulename, classname = settings.PERMISSION_FRAMEWORK.split(".", -1)
+            PermissionFramework = get_class_from_modulename(
+                modulename, classname, ExtensionType.PERMISSIONS_FRAMEWORKS
+            )
+            _PERMISSION_FRAMEWORK = PermissionFramework()
         else:
-            default_perms = []
-            for permission in group.permissions.all():
-                if perm in permission.codename:
-                    return True
-            return False
+            from arches.app.permissions.arches_default_allow import (
+                ArchesDefaultAllowPermissionFramework,
+            )
 
-    ret = []
-    for group in Group.objects.all():
-        if has_group_perm(group, perm, obj):
-            ret.append(group)
-    return ret
+            _PERMISSION_FRAMEWORK = ArchesDefaultAllowPermissionFramework()
+    return _PERMISSION_FRAMEWORK
 
 
-def get_users_for_object(perm, obj):
-    """
-    returns a list of user objects that have the given permission on the given object
+def get_createable_resource_models(user):
+    return GraphModel.objects.filter(pk__in=list(get_createable_resource_types(user)))
 
-    Arguments:
-    perm -- the permssion string eg: "read_nodegroup"
-    obj -- the model instance to check
 
-    """
+def assign_perm(perm, user_or_group, obj=None):
+    return _get_permission_framework().assign_perm(perm, user_or_group, obj=obj)
 
-    ret = []
-    for user in User.objects.all():
-        if user.has_perm(perm, obj):
-            ret.append(user)
-    return ret
+
+def remove_perm(perm, user_or_group=None, obj=None):
+    return _get_permission_framework().remove_perm(
+        perm, user_or_group=user_or_group, obj=obj
+    )
+
+
+def _get_permission_backend():
+    return _get_permission_framework().get_permission_backend()
+
+
+def get_restricted_users(resource, *, all_users: Iterable[User] = User.objects.none()):
+    return _get_permission_framework().get_restricted_users(
+        resource, all_users=all_users
+    )
+
+
+def get_filtered_instances(
+    user,
+    search_engine=None,
+    allresources=False,
+    resources: list[str] | None = None,
+) -> tuple[bool, list[str]]:
+    return _get_permission_framework().get_filtered_instances(
+        user,
+        search_engine=search_engine,
+        allresources=allresources,
+        resources=resources,
+    )
+
+
+def get_groups_with_permission_for_object(perm, obj):
+    return _get_permission_framework().get_groups_with_permission_for_object(perm, obj)
+
+
+def get_users_with_permission_for_object(perm, obj):
+    return _get_permission_framework().get_users_with_permission_for_object(perm, obj)
+
+
+def check_resource_instance_permissions(user, resourceid, permission, *, resource=None):
+    return _get_permission_framework().check_resource_instance_permissions(
+        user, resourceid, permission, resource=resource
+    )
 
 
 def get_nodegroups_by_perm(user, perms, any_perm=True):
-    """
-    returns a list of node groups that a user has the given permission on
-
-    Arguments:
-    user -- the user to check
-    perms -- the permssion string eg: "read_nodegroup" or list of strings
-    any_perm -- True to check ANY perm in "perms" or False to check ALL perms
-
-    """
-
-    A = set(
-        get_objects_for_user(
-            user,
-            ["models.read_nodegroup", "models.write_nodegroup", "models.delete_nodegroup", "models.no_access_to_nodegroup"],
-            accept_global_perms=False,
-            any_perm=True,
-        )
+    return _get_permission_framework().get_nodegroups_by_perm(
+        user, perms, any_perm=any_perm
     )
-    B = set(get_objects_for_user(user, perms, accept_global_perms=False, any_perm=any_perm))
-    C = set(get_objects_for_user(user, perms, accept_global_perms=True, any_perm=any_perm))
-    return list(C - A | B)
 
 
-def get_editable_resource_types(user):
+def get_map_layers_by_perm(user, perms, any_perm=True):
+    return _get_permission_framework().get_map_layers_by_perm(
+        user, perms, any_perm=any_perm
+    )
+
+
+def user_can_read_map_layers(user):
+    return _get_permission_framework().user_can_read_map_layers(user)
+
+
+def user_can_write_map_layers(user):
+    return _get_permission_framework().user_can_write_map_layers(user)
+
+
+def get_users_with_perms(
+    obj,
+    attach_perms=False,
+    with_superusers=False,
+    with_group_users=True,
+    only_with_perms_in=None,
+):
+    return _get_permission_framework().get_users_with_perms(
+        obj,
+        attach_perms=attach_perms,
+        with_superusers=with_superusers,
+        with_group_users=with_group_users,
+        only_with_perms_in=only_with_perms_in,
+    )
+
+
+def get_groups_with_perms(obj, attach_perms=False):
+    return _get_permission_framework().get_groups_with_perms(
+        obj, attach_perms=attach_perms
+    )
+
+
+def get_user_perms(user, obj):
     """
-    returns a list of graphs of which a user can edit resource instances
-
-    Arguments:
-    user -- the user to check
-
+    returns a queryset of permissions objects for a given user on a particular resource
     """
+    return _get_permission_framework().get_user_perms(user, obj)
 
-    return get_resource_types_by_perm(user, ["models.write_nodegroup", "models.delete_nodegroup"])
 
-
-def get_createable_resource_types(user):
+def get_group_perms(user_or_group, obj):
     """
-    returns a list of graphs of which a user can create resource instances
-
-    Arguments:
-    user -- the user to check
-
+    returns a queryset of permissions objects for a given group on a particular resource
     """
-
-    return get_resource_types_by_perm(user, "models.write_nodegroup")
-
-
-def get_resource_types_by_perm(user, perms):
-    """
-    returns a list of graphs for which a user has specific node permissions
-
-    Arguments:
-    user -- the user to check
-    perms -- the permssion string eg: "read_nodegroup" or list of strings
-    resource -- a resource instance to check if a user has permissions to that resource's type specifically
-
-    """
-
-    graphs = set()
-    nodegroups = get_nodegroups_by_perm(user, perms)
-    for node in Node.objects.filter(nodegroup__in=nodegroups).select_related("graph"):
-        if node.graph.isresource and str(node.graph_id) != settings.SYSTEM_SETTINGS_RESOURCE_MODEL_ID:
-            graphs.add(node.graph)
-    return list(graphs)
+    return _get_permission_framework().get_group_perms(user_or_group, obj)
 
 
-def user_can_edit_model_nodegroups(user, resource):
-    """
-    returns a list of graphs of which a user can edit resource instances
-
-    Arguments:
-    user -- the user to check
-    resource -- an instance of a model
-
-    """
-
-    return user_has_resource_model_permissions(user, ["models.write_nodegroup"], resource)
+def get_perms_for_model(cls):
+    return _get_permission_framework().get_perms_for_model(cls)
 
 
-def user_can_delete_model_nodegroups(user, resource):
-    """
-    returns a list of graphs of which a user can edit resource instances
+def get_perms(user_or_group, obj):
+    return _get_permission_framework().get_perms(user_or_group, obj)
 
-    Arguments:
-    user -- the user to check
-    resource -- an instance of a model
 
-    """
+def process_new_user(instance, created):
+    return _get_permission_framework().process_new_user(instance, created)
 
-    return user_has_resource_model_permissions(user, ["models.delete_nodegroup"], resource)
+
+def update_groups_for_user(instance):
+    return _get_permission_framework().update_groups_for_user(instance)
+
+
+def update_permissions_for_user(instance):
+    return _get_permission_framework().update_permissions_for_user(instance)
+
+
+def update_permissions_for_group(instance):
+    return _get_permission_framework().update_permissions_for_group(instance)
 
 
 def user_has_resource_model_permissions(user, perms, resource):
-    """
-    Checks if a user has any explicit permissions to a model's nodegroups
-
-    Arguments:
-    user -- the user to check
-    perms -- the permssion string eg: "read_nodegroup" or list of strings
-    resource -- a resource instance to check if a user has permissions to that resource's type specifically
-
-    """
-
-    nodegroups = get_nodegroups_by_perm(user, perms)
-    nodes = Node.objects.filter(nodegroup__in=nodegroups).filter(graph_id=resource.graph_id).select_related("graph")
-    return nodes.count() > 0
+    return _get_permission_framework().user_has_resource_model_permissions(
+        user, perms, resource
+    )
 
 
-def check_resource_instance_permissions(user, resourceid, permission):
-    """
-    Checks if a user has permission to access a resource instance
-
-    Arguments:
-    user -- the user to check
-    resourceid -- the id of the resource
-    permission -- the permission codename (e.g. 'view_resourceinstance') for which to check
-
-    """
-    result = {}
-    try:
-        resource = ResourceInstance.objects.get(resourceinstanceid=resourceid)
-        result["resource"] = resource
-        all_perms = get_perms(user, resource)
-        if len(all_perms) == 0:  # no permissions assigned. permission implied
-            result["permitted"] = "unknown"
-            return result
-        else:
-            user_permissions = get_user_perms(user, resource)
-            if "no_access_to_resourceinstance" in user_permissions:  # user is restricted
-                result["permitted"] = False
-                return result
-            elif permission in user_permissions:  # user is permitted
-                result["permitted"] = True
-                return result
-
-            group_permissions = get_group_perms(user, resource)
-            if "no_access_to_resourceinstance" in group_permissions:  # group is restricted - no user override
-                result["permitted"] = False
-                return result
-            elif permission in group_permissions:  # group is permitted - no user override
-                result["permitted"] = True
-                return result
-
-            if permission not in all_perms:  # neither user nor group explicitly permits or restricts.
-                result["permitted"] = False  # restriction implied
-                return result
-
-    except ObjectDoesNotExist:
-        return None
-
-    return result
+def user_can_read_resource(user, resourceid=None, *, resource=None):
+    return _get_permission_framework().user_can_read_resource(
+        user, resourceid=resourceid, resource=resource
+    )
 
 
-def user_can_read_resources(user, resourceid=None):
-    """
-    Requires that a user be able to read an instance and read a single nodegroup of a resource
-
-    """
-
-    if user.is_authenticated:
-        if user.is_superuser:
-            return True
-        if resourceid is not None:
-            result = check_resource_instance_permissions(user, resourceid, "view_resourceinstance")
-            if result is not None:
-                if result["permitted"] == "unknown":
-                    return user_has_resource_model_permissions(user, ["models.read_nodegroup"], result["resource"])
-                else:
-                    return result["permitted"]
-            else:
-                return None
-
-        return len(get_resource_types_by_perm(user, ["models.read_nodegroup"])) > 0
-    return False
+def user_can_edit_resource(user, resourceid=None, *, resource=None):
+    return _get_permission_framework().user_can_edit_resource(
+        user, resourceid=resourceid, resource=resource
+    )
 
 
-def user_can_edit_resources(user, resourceid=None):
-    """
-    Requires that a user be able to edit an instance and delete a single nodegroup of a resource
-
-    """
-
-    if user.is_authenticated:
-        if user.is_superuser:
-            return True
-        if resourceid is not None:
-            result = check_resource_instance_permissions(user, resourceid, "change_resourceinstance")
-            if result is not None:
-                if result["permitted"] == "unknown":
-                    return user.groups.filter(name__in=settings.RESOURCE_EDITOR_GROUPS).exists() or user_can_edit_model_nodegroups(
-                        user, result["resource"]
-                    )
-                else:
-                    return result["permitted"]
-            else:
-                return None
-
-        return user.groups.filter(name__in=settings.RESOURCE_EDITOR_GROUPS).exists() or len(get_editable_resource_types(user)) > 0
-    return False
-
-
-def user_can_delete_resources(user, resourceid=None):
-    """
-    Requires that a user be permitted to delete an instance
-
-    """
-    if user.is_authenticated:
-        if user.is_superuser:
-            return True
-        if resourceid is not None:
-            result = check_resource_instance_permissions(user, resourceid, "delete_resourceinstance")
-            if result is not None:
-                if result["permitted"] == "unknown":
-                    return user.groups.filter(name__in=settings.RESOURCE_EDITOR_GROUPS).exists() or user_can_edit_model_nodegroups(
-                        user, result["resource"]
-                    )
-                else:
-                    return result["permitted"]
-            else:
-                return None
-    return False
+def user_can_delete_resource(user, resourceid=None, *, resource=None):
+    return _get_permission_framework().user_can_delete_resource(
+        user, resourceid=resourceid, resource=resource
+    )
 
 
 def user_can_read_concepts(user):
-    """
-    Requires that a user is a part of the RDM Administrator group
+    return _get_permission_framework().user_can_read_concepts(user)
 
-    """
 
-    if user.is_authenticated:
-        return user.groups.filter(name="RDM Administrator").exists()
-    return False
+def user_is_resource_editor(user):
+    return _get_permission_framework().user_is_resource_editor(user)
 
 
 def user_is_resource_reviewer(user):
-    """
-    Single test for whether a user is in the Resource Reviewer group
-    """
+    return _get_permission_framework().user_is_resource_reviewer(user)
 
-    return user.groups.filter(name='Resource Reviewer').exists()
+
+def user_is_resource_exporter(user):
+    return _get_permission_framework().user_is_resource_exporter(user)
+
+
+def get_resource_types_by_perm(user, perms):
+    return _get_permission_framework().get_resource_types_by_perm(user, perms)
+
+
+def user_in_group_by_name(user, names):
+    return _get_permission_framework().user_in_group_by_name(user, names)
+
+
+def user_can_read_graph(user, graph_id):
+    return _get_permission_framework().user_can_read_graph(user, graph_id)
+
+
+def user_can_delete_model_nodegroups(user, resource):
+    return _get_permission_framework().user_can_delete_model_nodegroups(user, resource)
+
+
+def user_can_edit_model_nodegroups(user, resource):
+    return _get_permission_framework().user_can_edit_model_nodegroups(user, resource)
+
+
+def get_createable_resource_types(user):
+    return _get_permission_framework().get_createable_resource_types(user)
+
+
+def get_editable_resource_types(user):
+    return _get_permission_framework().get_editable_resource_types(user)
+
+
+def group_required(user, *group_names):
+    return _get_permission_framework().group_required(user, *group_names)
+
+
+def update_mappings():
+    return _get_permission_framework().update_mappings()
+
+
+def get_index_values(resource, *, all_users: Iterable[User] = User.objects.none()):
+    return _get_permission_framework().get_index_values(resource, all_users=all_users)
+
+
+def get_permission_search_filter(user):
+    return _get_permission_framework().get_permission_search_filter(user)
+
+
+def get_permission_inclusions():
+    return _get_permission_framework().get_permission_inclusions()
+
+
+def get_search_ui_permissions(user, search_result, groups=None):
+    return _get_permission_framework().get_search_ui_permissions(
+        user, search_result, groups
+    )
+
+
+def get_default_permissions(
+    user_or_group,
+    model,
+):
+    return _get_permission_framework().get_default_permissions(user_or_group, model)
+
+
+def get_default_settable_permissions():
+    return _get_permission_framework().get_default_settable_permissions()

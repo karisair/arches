@@ -8,6 +8,7 @@ from django.core import management
 from arches.app.models.system_settings import settings
 from arches.app.models.concept import Concept
 from arches.app.search.search_engine_factory import SearchEngineFactory
+from arches.app.search.mappings import CONCEPTS_INDEX
 from arches.app.search.elasticsearch_dsl_builder import Term, Query
 from rdflib import Graph, RDF, RDFS
 
@@ -16,12 +17,13 @@ def forwards_func(apps, schema_editor):
     # We get the model from the versioned app registry;
     # if we directly import it, it'll be the wrong version
 
-    # index base Arches concept
-    arches_concept = Concept().get(id="00000000-0000-0000-0000-000000000001", include=["label"])
-    arches_concept.index()
-
     DValueType = apps.get_model("models", "DValueType")
-    DValueType.objects.create(valuetype="identifier", category="identifiers", namespace="dcterms", datatype="text")
+    DValueType.objects.create(
+        valuetype="identifier",
+        category="identifiers",
+        namespace="dcterms",
+        datatype="text",
+    )
 
 
 def reverse_func(apps, schema_editor):
@@ -40,8 +42,10 @@ def reverse_func(apps, schema_editor):
     # remove index for base Arches concept
     se = SearchEngineFactory().create()
     query = Query(se, start=0, limit=10000)
-    query.add_query(Term(field="conceptid", term="00000000-0000-0000-0000-000000000001"))
-    query.delete(index="concepts")
+    query.add_query(
+        Term(field="conceptid", term="00000000-0000-0000-0000-000000000001")
+    )
+    query.delete(index=CONCEPTS_INDEX)
 
     try:
         DValueType = apps.get_model("models", "DValueType")

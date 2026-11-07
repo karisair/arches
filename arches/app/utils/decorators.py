@@ -20,14 +20,22 @@ import warnings
 import functools
 import logging
 import datetime
-from arches.app.utils.permission_backend import get_editable_resource_types
-from arches.app.utils.permission_backend import get_resource_types_by_perm
-from arches.app.utils.permission_backend import user_can_read_resources
-from arches.app.utils.permission_backend import user_can_edit_resources
-from arches.app.utils.permission_backend import user_can_read_concepts
-from arches.app.utils.permission_backend import user_can_delete_resources
+
 from django.contrib.auth.decorators import user_passes_test
 from django.core.exceptions import PermissionDenied
+from django.http import HttpResponseRedirect
+from django.urls import reverse
+
+from arches.app.models import models
+from arches.app.utils.permission_backend import user_can_read_resource
+from arches.app.utils.permission_backend import user_can_edit_resource
+from arches.app.utils.permission_backend import user_can_delete_resource
+from arches.app.utils.permission_backend import user_can_read_concepts
+from arches.app.utils.permission_backend import user_created_transaction
+from arches.app.utils.permission_backend import (
+    group_required as permission_group_required,
+)
+from arches.app.utils.response import JSONResponse
 
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
@@ -49,41 +57,59 @@ def deprecated(func):
             lineno=func.__code__.co_firstlineno + 1,
         )
         warnings.simplefilter("default", DeprecationWarning)  # reset filter
-        logger.warn(
+        logger.warning(
             "%s - DeprecationWarning: Call to deprecated function %s. %s:%s"
-            % (datetime.datetime.now(), func.__name__, func.__code__.co_filename, func.__code__.co_firstlineno + 1)
+            % (
+                datetime.datetime.now(),
+                func.__name__,
+                func.__code__.co_filename,
+                func.__code__.co_firstlineno + 1,
+            )
         )
         return func(*args, **kwargs)
 
     return new_func
 
 
-def group_required(*group_names):
+def group_required(*group_names, raise_exception=False):
     """
     Requires user membership in at least one of the groups passed in.
 
     """
 
     def in_groups(u):
-        if u.is_authenticated:
-            if u.is_superuser or bool(u.groups.filter(name__in=group_names)):
-                return True
+        passed = permission_group_required(u, *group_names)
+        if passed:
+            return True
+        elif raise_exception:
+            raise PermissionDenied
+        # else: user_passes_test() redirects to nowhere
         return False
 
     return user_passes_test(in_groups)
 
 
-def can_edit_resource_instance(function):
-    @functools.wraps(function)
-    def wrapper(request, *args, **kwargs):
-        resourceid = kwargs["resourceid"] if "resourceid" in kwargs else None
-        if user_can_edit_resources(request.user, resourceid=resourceid):
-            return function(request, *args, **kwargs)
-        else:
-            raise PermissionDenied
-        return function(request, *args, **kwargs)
+def can_edit_resource_instance(redirect_to_report=False):
+    def decorator(function):
+        @functools.wraps(function)
+        def _wrapped_view(request, *args, **kwargs):
+            resourceid = kwargs["resourceid"] if "resourceid" in kwargs else None
+            if user_can_edit_resource(request.user, resourceid=resourceid):
+                return function(request, *args, **kwargs)
+            else:
+                if redirect_to_report is True:
+                    url = reverse("resource_report", kwargs={"resourceid": resourceid})
+                    return HttpResponseRedirect(f"{url}?redirected=true")
+                else:
+                    raise PermissionDenied
 
-    return wrapper
+        return _wrapped_view
+
+    # If the decorator is called without arguments
+    if callable(redirect_to_report):
+        return decorator(redirect_to_report)
+
+    return decorator
 
 
 def can_read_resource_instance(function):
@@ -95,7 +121,7 @@ def can_read_resource_instance(function):
     @functools.wraps(function)
     def wrapper(request, *args, **kwargs):
         resourceid = kwargs["resourceid"] if "resourceid" in kwargs else None
-        if user_can_read_resources(request.user, resourceid=resourceid):
+        if user_can_read_resource(request.user, resourceid=resourceid):
             return function(request, *args, **kwargs)
         else:
             raise PermissionDenied
@@ -113,11 +139,10 @@ def can_delete_resource_instance(function):
     @functools.wraps(function)
     def wrapper(request, *args, **kwargs):
         resourceid = kwargs["resourceid"] if "resourceid" in kwargs else None
-        if user_can_delete_resources(request.user, resourceid=resourceid):
+        if user_can_delete_resource(request.user, resourceid=resourceid):
             return function(request, *args, **kwargs)
         else:
             raise PermissionDenied
-        return function(request, *args, **kwargs)
 
     return wrapper
 
@@ -129,3 +154,16 @@ def can_read_concept():
     """
 
     return user_passes_test(user_can_read_concepts)
+
+
+# Checks whether current user is the one who created a particular transaction ID
+def user_created_transaction_match(function):
+    @functools.wraps(function)
+    def wrapper(request, *args, **kwargs):
+        transactionid = kwargs["transactionid"] if "transactionid" in kwargs else None
+        if user_created_transaction(request.user, transactionid=transactionid):
+            return function(request, *args, **kwargs)
+        else:
+            raise PermissionDenied
+
+    return wrapper
