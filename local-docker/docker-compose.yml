@@ -1,0 +1,55 @@
+# Local Arches 8.1 stack. Everything runs in containers; only Docker Desktop is needed on the host.
+# Usage (from this folder):  docker compose up --build
+name: arches-local
+
+services:
+  arches:
+    build: ./arches
+    image: arches-local:8.1.6
+    depends_on:
+      - db
+      - elasticsearch
+    ports:
+      - "127.0.0.1:${ARCHES_PORT:-8000}:8000"
+    environment:
+      ARCHES_PROJECT: myproject
+      ARCHES_PORT: ${ARCHES_PORT:-8000}
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgis
+      PGDBNAME: myproject
+      ESHOST: elasticsearch
+      ESPORT: "9200"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      # Project files (code, settings, uploads) live here on your Mac so you can edit them.
+      - ./project:/web_root
+      # node_modules stays inside Docker: faster on macOS and keeps your folder small.
+      - node-modules:/web_root/myproject/node_modules
+
+  db:
+    build: ./postgis
+    image: arches-local-postgis:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgis
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  elasticsearch:
+    image: elasticsearch:8.19.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      # Without this, Elasticsearch stops creating indexes once Docker's disk is 90% full,
+      # which makes Arches setup hang and time out.
+      cluster.routing.allocation.disk.threshold_enabled: "false"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+volumes:
+  node-modules:
+  postgres-data:
+  elasticsearch-data:
