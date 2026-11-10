@@ -39,6 +39,27 @@ Arches' maps use Mapbox, so the map area stays blank until you add a free
 Mapbox access token. Create one at <https://account.mapbox.com/>, then in
 Arches go to **System Settings** (sidebar) → **Mapbox API Key**, paste it and save.
 
+### Example data models
+
+A new Arches has no resource models (the definitions of what you record), so
+it starts empty. To load Arches' example package, with models for heritage
+resources, heritage resource groups, actors (people and organisations),
+activities, historical events and information resources, plus their
+vocabularies and map layers, run this once while Arches is up:
+
+```bash
+docker compose exec arches bash /opt/example-package/load-example-package.sh
+```
+
+It takes a few minutes. The package was last updated for Arches 7.4, so the
+script patches a downloaded copy for 8.1 first (see
+`example-package/patch_example_pkg.py`), then loads it and activates its
+models. It adds models only, no sample records. Afterwards you can add records
+under **Manage → Add new resource**.
+
+The package also sets Arches' analysis coordinate system to British National
+Grid (EPSG:27700), because it was made for UK heritage records.
+
 ## Everyday use
 
 ```bash

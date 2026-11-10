@@ -27,6 +27,8 @@ services:
       - ./project:/web_root
       # node_modules stays inside Docker: faster on macOS and keeps your folder small.
       - node-modules:/web_root/myproject/node_modules
+      # Script that loads Arches' example package (see README).
+      - ./example-package:/opt/example-package:ro
 
   db:
     build: ./postgis
